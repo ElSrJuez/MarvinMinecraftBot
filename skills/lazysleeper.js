@@ -54,6 +54,7 @@ let _bot = null;
 let _memory = null;
 let _active = false;
 let _wasDay = true;
+let _bedIds = null;
 let _listeners = {};
 
 function _say (msg) {
@@ -61,13 +62,8 @@ function _say (msg) {
 }
 
 function _findNearestBed () {
-  const mcData = require('minecraft-data')(_bot.version);
-  const bedIds = Object.values(mcData.blocksByName)
-    .filter(b => _bot.isABed({ name: b.name }))
-    .map(b => b.id);
-
   return _bot.findBlock({
-    matching: bedIds,
+    matching: _bedIds,
     maxDistance: config.bedSearchRadius,
   });
 }
@@ -119,8 +115,17 @@ async function _sleepCycle () {
       return;
     }
 
-    // Wait for wake
-    await new Promise(resolve => _bot.once('wake', resolve));
+    // Wait for wake or disconnect (clean up whichever listener didn't fire)
+    const wakeReason = await new Promise(resolve => {
+      const onWake = () => { _bot.removeListener('end', onEnd); resolve('wake'); };
+      const onEnd = () => { _bot.removeListener('wake', onWake); resolve('disconnect'); };
+      _bot.once('wake', onWake);
+      _bot.once('end', onEnd);
+    });
+    if (wakeReason === 'disconnect') {
+      logger.info('Disconnected while sleeping');
+      return;
+    }
     logger.info('Woke up');
     _say(_pick(LINES.waking));
 
@@ -137,8 +142,10 @@ async function _sleepCycle () {
   } catch (err) {
     logger.error(`Sleep cycle error: ${err.message}`);
   } finally {
-    _bot.locks.delete('movement');
-    _bot.locks.delete('sleeping');
+    if (_bot) {
+      _bot.locks.delete('movement');
+      _bot.locks.delete('sleeping');
+    }
     _active = false;
   }
 }
@@ -168,6 +175,11 @@ module.exports = {
     if (!_bot.pathfinder) {
       _bot.loadPlugin(pathfinder);
     }
+
+    const mcData = require('minecraft-data')(_bot.version);
+    _bedIds = Object.values(mcData.blocksByName)
+      .filter(b => _bot.isABed({ name: b.name }))
+      .map(b => b.id);
 
     _listeners.timeUpdate = _onTimeUpdate;
     _bot.on('time', _listeners.timeUpdate);
