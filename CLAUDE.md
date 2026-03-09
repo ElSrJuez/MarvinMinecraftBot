@@ -43,7 +43,7 @@ npm run audit:fix
 - Caches quotes locally to `QUOTE_CACHE_FILE` to avoid repeated network requests
 - Sends quotes as chunked chat messages (splitting long quotes to fit Minecraft's 256-char limit)
 - Only sends quotes if players are nearby (within QUOTE_RADIUS)
-- Configuration: QUOTE_ENABLED, QUOTE_URL, QUOTE_INTERVAL_MS, QUOTE_PROBABILITY, QUOTE_MAX_LEN, QUOTE_CACHE_FILE, QUOTE_RADIUS
+- Configuration: QUOTE_ENABLED, QUOTE_URL, QUOTE_INTERVAL_MS, QUOTE_PROBABILITY, QUOTE_CACHE_FILE, QUOTE_RADIUS
 
 **log/logging.js** (Logging system)
 - Provides a `createLogger(moduleName)` factory for creating module-specific loggers
@@ -62,12 +62,11 @@ npm run audit:fix
 
 All configuration is environment-variable driven via `.env` file. See `.env.sample` for all available options:
 - **Bot connection**: MC_HOST, MC_PORT, MC_USERNAME
-- **Dialogue**: QUOTE_ENABLED, QUOTE_URL, QUOTE_INTERVAL_MS, QUOTE_PROBABILITY, QUOTE_MAX_LEN, QUOTE_CACHE_FILE, QUOTE_RADIUS
+- **Dialogue**: QUOTE_ENABLED, QUOTE_URL, QUOTE_INTERVAL_MS, QUOTE_PROBABILITY, QUOTE_CACHE_FILE, QUOTE_RADIUS
 - **Logging**: LOG_DIR, LOG_LEVEL
 
 ### Important Implementation Details
 
-- **Dialogue chunking**: The `_splitIntoChunks()` method intelligently splits long quotes by word boundaries while respecting the max character limit. Continuation chunks are prefixed with "...".
 - **Player detection**: The dialogue module uses `this.bot.players` (which tracks players in sight) and calculates Euclidean distance to check if players are nearby.
 - **Cache format**: Quotes are stored as JSON arrays. The loader normalizes both string quotes and `{ quote: "..." }` objects.
 - **Quote sources**: The QUOTE_URL can be a comma-separated list of URLs. Both array and `{ quotes: [...] }` response formats are supported.

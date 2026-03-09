@@ -13,7 +13,6 @@ try {
   
   config.intervalMs = parseIntRequired('Dialogue', 'QUOTE_INTERVAL_MS');
   config.probability = parseFloatRequired('Dialogue', 'QUOTE_PROBABILITY');
-  config.maxChunkLength = parseIntRequired('Dialogue', 'QUOTE_MAX_LEN');
   config.cacheFile = requireEnv('Dialogue', 'QUOTE_CACHE_FILE');
   config.radius = parseFloatRequired('Dialogue', 'QUOTE_RADIUS');
 } catch (err) {
@@ -78,33 +77,6 @@ class Dialogue {
     return this.quotes[Math.floor(Math.random() * this.quotes.length)].trim()
   }
 
-  _splitIntoChunks (text) {
-    const max = config.maxChunkLength
-    if (!text || text.length <= max) return text ? [text] : []
-
-    const words = text.split(/\s+/)
-    const numChunks = Math.ceil(text.length / max)
-    const targetWords = Math.ceil(words.length / numChunks)
-
-    const parts = []
-    let idx = 0
-    while (idx < words.length) {
-      const prefix = parts.length > 0 ? '...' : ''
-      const limit = max - prefix.length
-      let chunk = ''
-      let count = 0
-      while (idx < words.length && count < targetWords) {
-        const sep = chunk ? ' ' : ''
-        if (chunk && (chunk + sep + words[idx]).length > limit) break
-        chunk += sep + words[idx]
-        idx++
-        count++
-      }
-      parts.push(prefix + chunk)
-    }
-    return parts
-  }
-
   async loadQuotes (force = false) {
     if (!force) {
       const cache = await this._readCache()
@@ -123,35 +95,18 @@ class Dialogue {
     return this.quotes
   }
 
-  async _sendChunks (chunks) {
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i].trim()
-      if (!chunk) continue
-      logger.info(`sending chunk (${i + 1}/${chunks.length}): ${chunk.length} chars`)
-      try {
-        this.bot.chat(chunk)
-      } catch (err) {
-        logger.warn(`failed to send chat chunk: ${err.message}`)
-      }
-      // small pause between parts
-      await new Promise(r => setTimeout(r, 700))
-    }
-  }
-
-  async _maybeQuote () {
+  _maybeQuote () {
     if (Math.random() > config.probability) return
     const q = this._pickRandom()
     if (!q) return
-    logger.debug(`selected quote length ${q.length}`)
 
-    // send only if there are players within radius
     if (!this._playersNearby(config.radius)) {
       logger.debug(`no players within radius ${config.radius}; skipping quote`)
       return
     }
 
-    const chunks = this._splitIntoChunks(q)
-    await this._sendChunks(chunks)
+    logger.info(`sending quote: ${q.length} chars`)
+    this.bot.chat(q)
   }
 
   _playersNearby (radius) {
@@ -185,11 +140,8 @@ class Dialogue {
       return
     }
     // initial delay a bit so bot has time to join
-    this._timer = setInterval(() => {
-      this._maybeQuote().catch(err => logger.error(`maybeQuote error: ${err && err.message}`))
-    }, config.intervalMs)
-    // also schedule first run shortly after start
-    setTimeout(() => { this._maybeQuote().catch(err => logger.error(`maybeQuote error: ${err && err.message}`)) }, 2000)
+    this._timer = setInterval(() => this._maybeQuote(), config.intervalMs)
+    setTimeout(() => this._maybeQuote(), 2000)
   }
 
   stop () {
