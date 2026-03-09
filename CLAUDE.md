@@ -83,6 +83,10 @@ All configuration is environment-variable driven via `.env` file. See `.env.samp
 
 ### Important Implementation Details
 
+- **Locks**: `bot.locks` is a `Set` of named strings. Skills add/delete/check locks to coordinate. Current lock names:
+  - `'movement'` — physical control in use (pathfinding); `lookAtNearestPlayer` yields when set
+  - `'sleeping'` — bot is in bed; chat still works, but movement skills should yield
+  - New lock types are just new strings — no registration needed
 - **Player detection**: The dialogue module uses `this.bot.players` (which tracks players in sight) and calculates Euclidean distance to check if players are nearby.
 - **Cache format**: Quotes are stored as JSON arrays. The loader normalizes both string quotes and `{ quote: "..." }` objects.
 - **Quote sources**: The QUOTE_URL can be a comma-separated list of URLs. Both array and `{ quotes: [...] }` response formats are supported.
