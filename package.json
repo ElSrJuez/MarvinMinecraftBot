@@ -1,0 +1,19 @@
+{
+  "name": "marvinminecraftbot",
+  "version": "1.0.0",
+  "description": "A simple Mineflayer bot that looks at the nearest player.",
+  "main": "MarvinMinecraftBot.js",
+  "scripts": {
+    "start": "node MarvinMinecraftBot.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "audit:fix": "npm audit fix"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "mineflayer": "^4.35.0",
+    "dotenv": "^16.0.0"
+  }
+}

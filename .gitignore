@@ -1,0 +1,9 @@
+node_modules/
+package-lock.json
+.env
+.DS_Store
+npm-debug.log*
+*.log
+# Optional editor files
+.vscode/
+.idea/
