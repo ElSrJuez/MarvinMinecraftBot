@@ -30,18 +30,28 @@ bot.on('error', (err) => logger.error(`Bot error: ${err.message}`));
 bot.on('end', () => logger.info('Bot disconnected'));
 bot.on('message', (jsonMsg) => logger.info(`Chat message: ${jsonMsg.toString()}`));
 
-// dialogue module: periodically blurb quotes when idle
+// modules and skills
+const { loadSkills, startAll, stopAll } = require('./skills/loader');
+const memory = require('./memory/memory');
+const skills = loadSkills(path.join(__dirname, 'skills'));
+
+let dialogue = null;
 try {
   const Dialogue = require('./dialogue/dialogue');
-  const dialogue = new Dialogue(bot);
-
-  bot.once('spawn', () => {
-    logger.info('Bot spawned — starting dialogue module');
-    dialogue.start().catch(err => logger.error(`Dialogue failed to start: ${err.message}`));
-  });
+  dialogue = new Dialogue(bot);
 } catch (err) {
   logger.error(`Dialogue module could not be initialized: ${err.message}`);
 }
+
+bot.once('spawn', async () => {
+  logger.info('Bot spawned');
+  if (dialogue) {
+    dialogue.start().catch(err => logger.error(`Dialogue failed to start: ${err.message}`));
+  }
+  await startAll(skills, bot, memory);
+});
+
+bot.on('end', () => stopAll(skills));
 
 function lookAtNearestPlayer () {
   const playerFilter = (entity) => entity.type === 'player'
