@@ -6,5 +6,6 @@ npm-debug.log*
 # Optional editor files
 .vscode/
 .idea/
+.claude/
 logs/*
 dialogue/cache.json
