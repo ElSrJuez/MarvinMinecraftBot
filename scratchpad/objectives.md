@@ -16,6 +16,14 @@ MarvinMinecraftBot.js  (entry point — boots bot, loads skills)
 └── log/               (existing logging)
 ```
 
+### Locks (`bot.locks`)
+- A `Set` of named strings on the bot instance, initialized in `MarvinMinecraftBot.js`
+- Two types of lock:
+  - **Safety** (`'movement'`): physical control in use — lookAt and other movement code yields
+  - **Functional** (`'sleeping'`): bot is in a state where some actions don't make sense (but chat is fine)
+- Skills `add`/`delete`/`has` by name — no module, no class, just a Set and a convention
+- New lock types = new strings, no registration needed
+
 ### Memory Module (`memory/memory.js`)
 - Canonical module for all persistent memory needs
 - Reads/writes/appends timestamped entries to files in `MEMORY_DIR`

@@ -24,6 +24,9 @@ const bot = mineflayer.createBot({
   username: config.username
 });
 
+// Named locks: skills add/delete/check by name (e.g. 'movement', 'sleeping')
+bot.locks = new Set();
+
 bot.on('login', () => logger.info(`Bot logged in as ${config.username}`));
 bot.on('kicked', (reason) => logger.warn(`Bot kicked: ${reason}`));
 bot.on('error', (err) => logger.error(`Bot error: ${err.message}`));
@@ -54,11 +57,13 @@ bot.once('spawn', async () => {
 bot.on('end', () => stopAll(skills));
 
 function lookAtNearestPlayer () {
+  if (bot.locks.has('movement')) return
+
   const playerFilter = (entity) => entity.type === 'player'
   const playerEntity = bot.nearestEntity(playerFilter)
-  
+
   if (!playerEntity) return
-  
+
   const pos = playerEntity.position.offset(0, playerEntity.height, 0)
   bot.lookAt(pos)
 }

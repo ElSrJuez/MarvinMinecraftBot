@@ -52,7 +52,8 @@ function _pick (arr) {
 
 let _bot = null;
 let _memory = null;
-let _sleeping = false;
+let _active = false;
+let _wasDay = true;
 let _listeners = {};
 
 function _say (msg) {
@@ -60,24 +61,28 @@ function _say (msg) {
 }
 
 function _findNearestBed () {
-  const bedNames = ['bed', '_bed'];
-  const bedBlock = _bot.findBlock({
-    matching: (block) => bedNames.some(n => block.name.includes(n)),
+  const mcData = require('minecraft-data')(_bot.version);
+  const bedIds = Object.values(mcData.blocksByName)
+    .filter(b => _bot.isABed({ name: b.name }))
+    .map(b => b.id);
+
+  return _bot.findBlock({
+    matching: bedIds,
     maxDistance: config.bedSearchRadius,
   });
-  return bedBlock;
 }
 
 async function _goTo (pos) {
-  const mcData = require('minecraft-data')(_bot.version);
-  const movements = new Movements(_bot, mcData);
+  const movements = new Movements(_bot);
   _bot.pathfinder.setMovements(movements);
   await _bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 2));
 }
 
-async function _onSleepNeeded () {
-  if (_sleeping) return;
-  _sleeping = true;
+async function _sleepCycle () {
+  if (_active) return;
+  _active = true;
+  _bot.locks.add('movement');
+  _bot.locks.add('sleeping');
 
   try {
     const returnPos = _bot.entity.position.clone();
@@ -87,7 +92,6 @@ async function _onSleepNeeded () {
     if (!bed) {
       logger.info('No bed found nearby');
       _say(_pick(LINES.noBed));
-      _sleeping = false;
       return;
     }
 
@@ -99,9 +103,11 @@ async function _onSleepNeeded () {
     } catch (err) {
       logger.warn(`Failed to pathfind to bed: ${err.message}`);
       _say(_pick(LINES.cantReach));
-      _sleeping = false;
       return;
     }
+
+    // Release movement lock once at the bed, keep sleeping lock
+    _bot.locks.delete('movement');
 
     try {
       await _bot.sleep(bed);
@@ -110,16 +116,16 @@ async function _onSleepNeeded () {
     } catch (err) {
       logger.warn(`Failed to sleep: ${err.message}`);
       _say(_pick(LINES.interrupted));
-      _sleeping = false;
       return;
     }
 
-    // wait for wake
+    // Wait for wake
     await new Promise(resolve => _bot.once('wake', resolve));
     logger.info('Woke up');
     _say(_pick(LINES.waking));
 
-    // return to previous position
+    // Return to previous position
+    _bot.locks.add('movement');
     try {
       await _goTo(returnPos);
       _say(_pick(LINES.returning));
@@ -131,17 +137,19 @@ async function _onSleepNeeded () {
   } catch (err) {
     logger.error(`Sleep cycle error: ${err.message}`);
   } finally {
-    _sleeping = false;
+    _bot.locks.delete('movement');
+    _bot.locks.delete('sleeping');
+    _active = false;
   }
 }
 
 function _onTimeUpdate () {
-  if (_sleeping) return;
-  // Minecraft day is 24000 ticks; sleep is possible from 12541 to 23458
-  const time = _bot.time.timeOfDay;
-  if (time >= 12541 && time <= 13000) {
-    _onSleepNeeded().catch(err => logger.error(`Sleep cycle failed: ${err.message}`));
+  if (_active) return;
+  const isDay = _bot.time.isDay;
+  if (_wasDay && !isDay) {
+    _sleepCycle().catch(err => logger.error(`Sleep cycle failed: ${err.message}`));
   }
+  _wasDay = isDay;
 }
 
 module.exports = {
@@ -155,6 +163,7 @@ module.exports = {
 
     _bot = bot;
     _memory = memory;
+    _wasDay = _bot.time.isDay;
 
     if (!_bot.pathfinder) {
       _bot.loadPlugin(pathfinder);
@@ -169,9 +178,13 @@ module.exports = {
     if (_bot && _listeners.timeUpdate) {
       _bot.removeListener('time', _listeners.timeUpdate);
     }
+    if (_bot) {
+      _bot.locks.delete('movement');
+      _bot.locks.delete('sleeping');
+    }
     _listeners = {};
     _bot = null;
     _memory = null;
-    _sleeping = false;
+    _active = false;
   },
 };
