@@ -80,73 +80,28 @@ class Dialogue {
 
   _splitIntoChunks (text) {
     const max = config.maxChunkLength
-    if (!text) return []
-    if (text.length <= max) return [text]
+    if (!text || text.length <= max) return text ? [text] : []
 
-    // Split into word tokens while keeping separators
-    const tokens = text.split(/(\s+)/)
-    const words = []
-    for (let i = 0; i < tokens.length; i++) {
-      const t = tokens[i]
-      if (!t) continue
-      if (/^\s+$/.test(t)) continue
-      let w = t
-      if (i + 1 < tokens.length && /^\s+$/.test(tokens[i + 1])) w += tokens[i + 1]
-      words.push(w)
-    }
-
-    // Estimate number of chunks based on length, then aim for roughly equal word counts
-    let numChunks = Math.max(1, Math.ceil(text.length / max))
-    let targetWords = Math.max(1, Math.ceil(words.length / numChunks))
+    const words = text.split(/\s+/)
+    const numChunks = Math.ceil(text.length / max)
+    const targetWords = Math.ceil(words.length / numChunks)
 
     const parts = []
     let idx = 0
     while (idx < words.length) {
-      const isContinuation = parts.length >= 1
-      const ell = isContinuation ? '...' : ''
-      const allowed = Math.max(1, max - (isContinuation ? ell.length : 0))
-
+      const prefix = parts.length > 0 ? '...' : ''
+      const limit = max - prefix.length
       let chunk = ''
-      let wordsInChunk = 0
-
-      while (idx < words.length) {
-        const candidate = chunk + words[idx]
-        // if candidate too long
-        if (candidate.length > allowed) {
-          // if we haven't added any words, need to force-cut the long token
-          if (wordsInChunk === 0) {
-            const token = words[idx]
-            // take slice that fits
-            const slice = token.slice(0, allowed)
-            chunk += slice
-            // replace current word with the remainder (preserve without leading space)
-            const remainder = token.slice(slice.length)
-            if (remainder.trim().length > 0) {
-              words[idx] = remainder
-            } else {
-              idx++
-            }
-          }
-          break
-        }
-        chunk = candidate
+      let count = 0
+      while (idx < words.length && count < targetWords) {
+        const sep = chunk ? ' ' : ''
+        if (chunk && (chunk + sep + words[idx]).length > limit) break
+        chunk += sep + words[idx]
         idx++
-        wordsInChunk++
-        if (wordsInChunk >= targetWords) break
+        count++
       }
-
-      // prefix continuation chunks with ellipsis
-      chunk = (isContinuation ? '...' : '') + chunk.trim()
-      parts.push(chunk)
-
-      // Recalculate targetWords for remaining words to keep distribution even
-      const remainingWords = Math.max(0, words.length - idx)
-      if (remainingWords > 0) {
-        numChunks = Math.max(1, Math.ceil(remainingWords / targetWords))
-        targetWords = Math.max(1, Math.ceil(remainingWords / numChunks))
-      }
+      parts.push(prefix + chunk)
     }
-
     return parts
   }
 
