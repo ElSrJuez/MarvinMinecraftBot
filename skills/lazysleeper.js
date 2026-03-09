@@ -57,7 +57,6 @@ let _active = false;
 let _wasDay = true;
 let _sleptTonight = false;
 let _lastAttempt = 0;
-let _returnPos = null;
 let _bedIds = null;
 let _listeners = {};
 
@@ -86,11 +85,7 @@ async function _sleepCycle () {
   _bot.locks.add('sleeping');
 
   try {
-    // Remember original position only on first attempt of the night
-    if (!_returnPos) {
-      _returnPos = _bot.entity.position.clone();
-    }
-    await _memory.append('lazysleeper', { event: 'sleep_start', pos: { x: _returnPos.x, y: _returnPos.y, z: _returnPos.z } });
+    await _memory.append('lazysleeper', { event: 'sleep_start' });
 
     const bed = _findNearestBed();
     if (!bed) {
@@ -138,14 +133,19 @@ async function _sleepCycle () {
     logger.info('Woke up');
     _say(_pick(LINES.waking));
 
-    // Return to previous position
-    _bot.locks.add('movement');
-    try {
-      await _goTo(_returnPos);
+    // Return to outpost if set, otherwise stay put
+    if (_bot.outpost) {
+      _bot.locks.add('movement');
+      try {
+        await _goTo(_bot.outpost);
+        _say(_pick(LINES.returning));
+        await _memory.append('lazysleeper', { event: 'sleep_end', returned: true });
+      } catch (err) {
+        logger.warn(`Failed to return to outpost: ${err.message}`);
+        await _memory.append('lazysleeper', { event: 'sleep_end', returned: false });
+      }
+    } else {
       _say(_pick(LINES.returning));
-      await _memory.append('lazysleeper', { event: 'sleep_end', returned: true });
-    } catch (err) {
-      logger.warn(`Failed to return to previous position: ${err.message}`);
       await _memory.append('lazysleeper', { event: 'sleep_end', returned: false });
     }
   } catch (err) {
@@ -164,7 +164,6 @@ function _onTimeUpdate () {
   const isDay = _bot.time.isDay;
   if (isDay) {
     _sleptTonight = false;
-    _returnPos = null;
   } else if (!_sleptTonight && Date.now() - _lastAttempt > config.retryCooldownMs) {
     _lastAttempt = Date.now();
     _sleepCycle().catch(err => logger.error(`Sleep cycle failed: ${err.message}`));
