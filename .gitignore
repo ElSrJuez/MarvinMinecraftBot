@@ -9,3 +9,4 @@ npm-debug.log*
 .claude/
 logs/*
 dialogue/cache.json
+memory/*
