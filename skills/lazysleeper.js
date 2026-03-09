@@ -8,6 +8,7 @@ try {
   config.enabled = requireEnv('LazySleeper', 'SLEEPER_ENABLED') === 'true';
   config.bedSearchRadius = parseIntRequired('LazySleeper', 'SLEEPER_BED_SEARCH_RADIUS');
   config.chatEnabled = requireEnv('LazySleeper', 'SLEEPER_CHAT_ENABLED') === 'true';
+  config.retryCooldownMs = parseIntRequired('LazySleeper', 'SLEEPER_RETRY_COOLDOWN_MS');
 } catch (err) {
   logger.error(`Initialization failed: ${err.message}`);
   throw err;
@@ -59,7 +60,6 @@ let _lastAttempt = 0;
 let _bedIds = null;
 let _listeners = {};
 
-const RETRY_COOLDOWN_MS = 60000;
 
 function _say (msg) {
   if (config.chatEnabled && _bot) _bot.chat(msg);
@@ -160,7 +160,7 @@ function _onTimeUpdate () {
   const isDay = _bot.time.isDay;
   if (isDay) {
     _sleptTonight = false;
-  } else if (!_sleptTonight && Date.now() - _lastAttempt > RETRY_COOLDOWN_MS) {
+  } else if (!_sleptTonight && Date.now() - _lastAttempt > config.retryCooldownMs) {
     _lastAttempt = Date.now();
     _sleepCycle().catch(err => logger.error(`Sleep cycle failed: ${err.message}`));
   }
