@@ -54,8 +54,12 @@ let _bot = null;
 let _memory = null;
 let _active = false;
 let _wasDay = true;
+let _sleptTonight = false;
+let _lastAttempt = 0;
 let _bedIds = null;
 let _listeners = {};
+
+const RETRY_COOLDOWN_MS = 60000;
 
 function _say (msg) {
   if (config.chatEnabled && _bot) _bot.chat(msg);
@@ -107,6 +111,7 @@ async function _sleepCycle () {
 
     try {
       await _bot.sleep(bed);
+      _sleptTonight = true;
       _say(_pick(LINES.sleeping));
       logger.info('Sleeping');
     } catch (err) {
@@ -153,7 +158,10 @@ async function _sleepCycle () {
 function _onTimeUpdate () {
   if (_active) return;
   const isDay = _bot.time.isDay;
-  if (_wasDay && !isDay) {
+  if (isDay) {
+    _sleptTonight = false;
+  } else if (!_sleptTonight && Date.now() - _lastAttempt > RETRY_COOLDOWN_MS) {
+    _lastAttempt = Date.now();
     _sleepCycle().catch(err => logger.error(`Sleep cycle failed: ${err.message}`));
   }
   _wasDay = isDay;
