@@ -57,6 +57,7 @@ let _active = false;
 let _wasDay = true;
 let _sleptTonight = false;
 let _lastAttempt = 0;
+let _returnPos = null;
 let _bedIds = null;
 let _listeners = {};
 
@@ -85,8 +86,11 @@ async function _sleepCycle () {
   _bot.locks.add('sleeping');
 
   try {
-    const returnPos = _bot.entity.position.clone();
-    await _memory.append('lazysleeper', { event: 'sleep_start', pos: { x: returnPos.x, y: returnPos.y, z: returnPos.z } });
+    // Remember original position only on first attempt of the night
+    if (!_returnPos) {
+      _returnPos = _bot.entity.position.clone();
+    }
+    await _memory.append('lazysleeper', { event: 'sleep_start', pos: { x: _returnPos.x, y: _returnPos.y, z: _returnPos.z } });
 
     const bed = _findNearestBed();
     if (!bed) {
@@ -137,7 +141,7 @@ async function _sleepCycle () {
     // Return to previous position
     _bot.locks.add('movement');
     try {
-      await _goTo(returnPos);
+      await _goTo(_returnPos);
       _say(_pick(LINES.returning));
       await _memory.append('lazysleeper', { event: 'sleep_end', returned: true });
     } catch (err) {
@@ -160,6 +164,7 @@ function _onTimeUpdate () {
   const isDay = _bot.time.isDay;
   if (isDay) {
     _sleptTonight = false;
+    _returnPos = null;
   } else if (!_sleptTonight && Date.now() - _lastAttempt > config.retryCooldownMs) {
     _lastAttempt = Date.now();
     _sleepCycle().catch(err => logger.error(`Sleep cycle failed: ${err.message}`));
