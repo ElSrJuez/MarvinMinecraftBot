@@ -1,18 +1,22 @@
 const fs = require('fs').promises;
 const path = require('path');
 
-require('dotenv').config({ path: path.resolve(process.cwd(), '.env') });
-
 // #region Logger Configuration
-const LOG_DIR = process.env.LOG_DIR;
-const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
-
-if (!LOG_DIR) {
-  console.error('FATAL: LOG_DIR is not defined in .env. Logging to file will be disabled.');
-}
-
 const levels = { debug: 0, info: 1, warn: 2, error: 3 };
-const currentLogLevel = levels[LOG_LEVEL] ?? levels.info;
+
+const LOG_DIR = process.env.LOG_DIR;
+const LOG_LEVEL = process.env.LOG_LEVEL;
+
+if (!LOG_DIR) throw new Error('Missing required environment variable LOG_DIR');
+if (!LOG_LEVEL) throw new Error('Missing required environment variable LOG_LEVEL');
+if (!(LOG_LEVEL in levels)) throw new Error(`Invalid LOG_LEVEL: "${LOG_LEVEL}" (must be one of: ${Object.keys(levels).join(', ')})`);
+
+const currentLogLevel = levels[LOG_LEVEL];
+
+fs.mkdir(LOG_DIR, { recursive: true }).catch(err => {
+  console.error(`[Logger] Failed to create log directory "${LOG_DIR}": ${err.message}`);
+  process.exit(1);
+});
 // #endregion
 
 // #region Logger Implementation
@@ -31,15 +35,12 @@ async function log(level, moduleName, msg) {
     console.log(line);
   }
 
-  // Log to file if LOG_DIR is set
-  if (LOG_DIR) {
-    try {
-      await fs.mkdir(LOG_DIR, { recursive: true });
-      const logFile = path.join(LOG_DIR, `${moduleName}.log`);
-      await fs.appendFile(logFile, line + '\n', 'utf8');
-    } catch (err) {
-      console.error(`[${ts}] [Logger] [error] Failed to write to log file: ${err.message}`);
-    }
+  // Log to file
+  try {
+    const logFile = path.join(LOG_DIR, `${moduleName}.log`);
+    await fs.appendFile(logFile, line + '\n', 'utf8');
+  } catch (err) {
+    console.error(`[${ts}] [Logger] [error] Failed to write to log file: ${err.message}`);
   }
 }
 

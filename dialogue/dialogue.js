@@ -1,6 +1,4 @@
 const fs = require('fs').promises;
-const path = require('path');
-const EventEmitter = require('events');
 const { createLogger, requireEnv, parseIntRequired, parseFloatRequired } = require('../log/logging');
 
 // #region Configuration Loading
@@ -24,19 +22,9 @@ try {
 }
 // #endregion
 
-class Dialogue extends EventEmitter {
+class Dialogue {
   constructor (bot) {
-    super();
     this.bot = bot;
-    
-    this.urls = config.urls;
-    this.cacheFile = config.cacheFile;
-    this.intervalMs = config.intervalMs;
-    this.probability = config.probability;
-    this.maxChunkLength = config.maxChunkLength;
-    this.enabled = config.enabled;
-    this.radius = config.radius;
-    
     this.quotes = [];
     this._timer = null;
     this._running = false;
@@ -44,27 +32,27 @@ class Dialogue extends EventEmitter {
 
   async _readCache () {
     try {
-      const txt = await fs.readFile(this.cacheFile, 'utf8')
+      const txt = await fs.readFile(config.cacheFile, 'utf8')
       const data = JSON.parse(txt)
       if (Array.isArray(data) && data.length) return data
       return null
     } catch (err) {
+      logger.warn(`failed to read cache ${config.cacheFile}: ${err.message}`)
       return null
     }
   }
 
   async _writeCache (arr) {
     try {
-      await fs.writeFile(this.cacheFile, JSON.stringify(arr, null, 2), 'utf8')
+      await fs.writeFile(config.cacheFile, JSON.stringify(arr, null, 2), 'utf8')
     } catch (err) {
-      // non-fatal
+      logger.warn(`failed to write cache ${config.cacheFile}: ${err.message}`)
     }
   }
 
   async _fetchUrls () {
     const combined = []
-    if (!this.urls || this.urls.length === 0) return combined
-    for (const u of this.urls) {
+    for (const u of config.urls) {
       try {
         const res = await fetch(u)
         if (!res.ok) {
@@ -81,13 +69,17 @@ class Dialogue extends EventEmitter {
     return combined
   }
 
+  _normalizeQuotes (arr) {
+    return arr.map(q => (typeof q === 'string' ? q : (q && q.quote) || '')).filter(Boolean)
+  }
+
   _pickRandom () {
     if (!this.quotes || !this.quotes.length) return null
     return this.quotes[Math.floor(Math.random() * this.quotes.length)].trim()
   }
 
   _splitIntoChunks (text) {
-    const max = this.maxChunkLength
+    const max = config.maxChunkLength
     if (!text) return []
     if (text.length <= max) return [text]
 
@@ -162,16 +154,14 @@ class Dialogue extends EventEmitter {
     if (!force) {
       const cache = await this._readCache()
       if (cache) {
-        // normalize cached entries to strings
-        this.quotes = cache.map(q => (typeof q === 'string' ? q : (q && q.quote) || '')).filter(Boolean)
-        logger.info(`loaded ${this.quotes.length} quotes from cache (${this.cacheFile})`)
+        this.quotes = this._normalizeQuotes(cache)
+        logger.info(`loaded ${this.quotes.length} quotes from cache (${config.cacheFile})`)
         return this.quotes
       }
     }
     const fetched = await this._fetchUrls()
     if (fetched && fetched.length) {
-      // normalize fetched entries to strings
-      this.quotes = fetched.map(q => (typeof q === 'string' ? q : (q && q.quote) || '')).filter(Boolean)
+      this.quotes = this._normalizeQuotes(fetched)
       logger.info(`fetched ${this.quotes.length} quotes from URL(s)`)
       await this._writeCache(this.quotes)
     }
@@ -184,10 +174,9 @@ class Dialogue extends EventEmitter {
       if (!chunk) continue
       logger.info(`sending chunk (${i + 1}/${chunks.length}): ${chunk.length} chars`)
       try {
-        // use chat if available
-        if (this.bot && typeof this.bot.chat === 'function') this.bot.chat(chunk)
+        this.bot.chat(chunk)
       } catch (err) {
-        // ignore send errors
+        logger.warn(`failed to send chat chunk: ${err.message}`)
       }
       // small pause between parts
       await new Promise(r => setTimeout(r, 700))
@@ -195,19 +184,14 @@ class Dialogue extends EventEmitter {
   }
 
   async _maybeQuote () {
-    if (Math.random() > this.probability) return
+    if (Math.random() > config.probability) return
     const q = this._pickRandom()
     if (!q) return
     logger.debug(`selected quote length ${q.length}`)
-    // ensure radius is configured
-    if (typeof this.radius !== 'number' || Number.isNaN(this.radius)) {
-      logger.error('QUOTE_RADIUS not configured; dialogue will not send messages')
-      return
-    }
 
     // send only if there are players within radius
-    if (!this._playersNearby(this.radius)) {
-      logger.debug(`no players within radius ${this.radius}; skipping quote`)
+    if (!this._playersNearby(config.radius)) {
+      logger.debug(`no players within radius ${config.radius}; skipping quote`)
       return
     }
 
@@ -216,31 +200,25 @@ class Dialogue extends EventEmitter {
   }
 
   _playersNearby (radius) {
-    try {
-      if (!this.bot || !this.bot.entity) return false
-      const mePos = this.bot.entity.position
-      // use bot.players entries which include player.entity when in sight
-      const players = Object.keys(this.bot.players || {}).filter(n => n !== (this.bot.username || this.bot._username))
-      const r2 = radius * radius
-      for (const name of players) {
-        const p = this.bot.players[name]
-        if (!p || !p.entity || !p.entity.position) continue
-        const pos = p.entity.position
-        const dx = pos.x - mePos.x
-        const dy = pos.y - mePos.y
-        const dz = pos.z - mePos.z
-        const dist2 = dx * dx + dy * dy + dz * dz
-        if (dist2 <= r2) return true
-      }
-    } catch (err) {
-      logger.warn(`playersNearby check failed: ${err && err.message}`)
+    if (!this.bot.entity) return false
+    const mePos = this.bot.entity.position
+    const players = Object.keys(this.bot.players).filter(n => n !== this.bot.username)
+    const r2 = radius * radius
+    for (const name of players) {
+      const p = this.bot.players[name]
+      if (!p.entity || !p.entity.position) continue
+      const pos = p.entity.position
+      const dx = pos.x - mePos.x
+      const dy = pos.y - mePos.y
+      const dz = pos.z - mePos.z
+      if (dx * dx + dy * dy + dz * dz <= r2) return true
     }
     return false
   }
 
   async start () {
     if (this._running) return
-    if (!this.enabled) {
+    if (!config.enabled) {
       logger.info('Dialogue disabled via QUOTE_ENABLED=false')
       return
     }
@@ -248,20 +226,13 @@ class Dialogue extends EventEmitter {
     
     await this.loadQuotes(false)
     if (!this.quotes || this.quotes.length === 0) {
-      // try a one-off fetch from default URL if no config provided, but warn loudly
-      if (!this.urls || this.urls.length === 0) {
-        logger.error('No quote URLs configured and no cached quotes found — dialogue will not run')
-        this.enabled = false
-        return
-      }
       logger.warn('No quotes available after load; dialogue will be disabled')
-      this.enabled = false
       return
     }
     // initial delay a bit so bot has time to join
     this._timer = setInterval(() => {
       this._maybeQuote().catch(err => logger.error(`maybeQuote error: ${err && err.message}`))
-    }, this.intervalMs)
+    }, config.intervalMs)
     // also schedule first run shortly after start
     setTimeout(() => { this._maybeQuote().catch(err => logger.error(`maybeQuote error: ${err && err.message}`)) }, 2000)
   }

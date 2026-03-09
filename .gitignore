@@ -1,5 +1,4 @@
 node_modules/
-package-lock.json
 .env
 .DS_Store
 npm-debug.log*
@@ -8,3 +7,4 @@ npm-debug.log*
 .vscode/
 .idea/
 logs/*
+dialogue/cache.json

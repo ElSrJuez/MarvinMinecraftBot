@@ -1,3 +1,6 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(process.cwd(), '.env') });
+
 const mineflayer = require('mineflayer');
 const { createLogger, requireEnv, parseIntRequired } = require('./log/logging');
 
@@ -21,6 +24,12 @@ const bot = mineflayer.createBot({
   username: config.username
 });
 
+bot.on('login', () => logger.info(`Bot logged in as ${config.username}`));
+bot.on('kicked', (reason) => logger.warn(`Bot kicked: ${reason}`));
+bot.on('error', (err) => logger.error(`Bot error: ${err.message}`));
+bot.on('end', () => logger.info('Bot disconnected'));
+bot.on('message', (jsonMsg) => logger.info(`Chat message: ${jsonMsg.toString()}`));
+
 // dialogue module: periodically blurb quotes when idle
 try {
   const Dialogue = require('./dialogue/dialogue');
@@ -30,12 +39,6 @@ try {
     logger.info('Bot spawned — starting dialogue module');
     dialogue.start().catch(err => logger.error(`Dialogue failed to start: ${err.message}`));
   });
-
-  bot.on('login', () => logger.info(`Bot logged in as ${config.username}`));
-  bot.on('kicked', (reason) => logger.warn(`Bot kicked: ${reason}`));
-  bot.on('error', (err) => logger.error(`Bot error: ${err.message}`));
-  bot.on('end', () => logger.info('Bot disconnected'));
-  bot.on('message', (jsonMsg) => logger.info(`Chat message: ${jsonMsg.toString()}`));
 } catch (err) {
   logger.error(`Dialogue module could not be initialized: ${err.message}`);
 }
