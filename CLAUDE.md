@@ -34,14 +34,27 @@ npm run audit:fix
 **MarvinMinecraftBot.js** (Entry point)
 - Loads configuration from environment variables (MC_HOST, MC_PORT, MC_USERNAME)
 - Creates the Mineflayer bot instance
-- Initializes the Dialogue module on bot spawn
+- Loads skills via the skill loader, initializes Dialogue module
+- On spawn: starts dialogue and all skills; on end: stops all skills
 - Attaches event handlers and the `lookAtNearestPlayer` behavior
+
+**skills/loader.js** (Skill framework)
+- Auto-discovers `.js` files in `skills/` (excluding `loader.js`)
+- Each skill must export `{ name, start(bot, memory), stop() }`
+- Individually try/catches each skill load and start — one broken skill doesn't crash the bot
+- Adding a new skill = dropping a file in `skills/` that follows the contract
+
+**memory/memory.js** (Shared memory module)
+- Canonical module for all persistent memory needs — all skills use this
+- File-backed JSONL storage: one file per skill in `MEMORY_DIR`
+- API: `append(skill, entry)`, `read(skill, n)`, `clear(skill)`
+- Auto-trims to `MEMORY_MAX_ENTRIES` per skill on append
+- Config: MEMORY_DIR, MEMORY_MAX_ENTRIES
 
 **dialogue/dialogue.js** (Quote system)
 - Implements the Dialogue class that manages periodic quote sending
 - Fetches quotes from one or more URLs (configured via QUOTE_URL)
 - Caches quotes locally to `QUOTE_CACHE_FILE` to avoid repeated network requests
-- Sends quotes as chunked chat messages (splitting long quotes to fit Minecraft's 256-char limit)
 - Only sends quotes if players are nearby (within QUOTE_RADIUS)
 - Configuration: QUOTE_ENABLED, QUOTE_URL, QUOTE_INTERVAL_MS, QUOTE_PROBABILITY, QUOTE_CACHE_FILE, QUOTE_RADIUS
 
@@ -53,16 +66,19 @@ npm run audit:fix
 
 ### Data Flow
 
-1. Bot starts → loads config → creates Mineflayer bot → waits for spawn event
-2. On spawn → Dialogue module starts → loads quotes (from cache or network) → schedules interval-based sending
+1. Bot starts → loads config → creates Mineflayer bot → loads skills from `skills/` dir → waits for spawn event
+2. On spawn → Dialogue starts → all skills start (each receives bot + memory) → behaviors are active
 3. Each tick → `lookAtNearestPlayer()` executes and positions the bot's head toward nearest player
-4. Each interval → Dialogue checks if it should send (based on probability and players nearby) → sends chunks if true
+4. Skills operate independently via their own event listeners and timers
+5. On disconnect → all skills are stopped via `stopAll()`
 
 ### Configuration
 
 All configuration is environment-variable driven via `.env` file. See `.env.sample` for all available options:
 - **Bot connection**: MC_HOST, MC_PORT, MC_USERNAME
+- **Memory**: MEMORY_DIR, MEMORY_MAX_ENTRIES
 - **Dialogue**: QUOTE_ENABLED, QUOTE_URL, QUOTE_INTERVAL_MS, QUOTE_PROBABILITY, QUOTE_CACHE_FILE, QUOTE_RADIUS
+- **Skills**: Each skill has its own env vars (e.g. SLEEPER_ENABLED, NARRATOR_ENABLED)
 - **Logging**: LOG_DIR, LOG_LEVEL
 
 ### Important Implementation Details
@@ -75,4 +91,5 @@ All configuration is environment-variable driven via `.env` file. See `.env.samp
 ## Dependencies
 
 - `mineflayer@^4.35.0` - Minecraft bot protocol library
+- `mineflayer-pathfinder` - Pathfinding for bot navigation (used by skills)
 - `dotenv@^16.0.0` - Environment variable loading

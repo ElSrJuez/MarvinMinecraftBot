@@ -23,12 +23,13 @@ MarvinMinecraftBot.js  (entry point — boots bot, loads skills)
 - Config: MEMORY_DIR, MEMORY_MAX_ENTRIES (env vars, no in-code defaults)
 - Simple API: `append(skill, entry)`, `read(skill, n)`, `clear(skill)`
 
-### Skills Pattern
-- Each skill exports a function: `module.exports = function (bot) { ... }`
-- Skills are loaded in `MarvinMinecraftBot.js` after spawn
-- Skills receive the `bot` instance and use shared modules (memory, logging)
+### Skill Framework (`skills/loader.js`)
+- Auto-discovers `.js` files in `skills/` (excluding `loader.js`)
+- Each skill exports `{ name, start(bot, memory), stop() }`
+- Loader handles lifecycle: `loadSkills(dir)` → `startAll(skills, bot, memory)` → `stopAll(skills)`
+- Each skill require + start is individually try/caught — one broken skill doesn't crash the bot
 - Skills manage their own config via `requireEnv()` (no in-code defaults)
-- Skills can be enabled/disabled individually via env vars
+- Adding a new skill = dropping a new file in `skills/` that follows the contract
 
 ---
 
