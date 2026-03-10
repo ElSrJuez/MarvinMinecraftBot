@@ -1,5 +1,6 @@
 const { createLogger, requireEnv, parseIntRequired, parseFloatRequired } = require('../log/logging');
-const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathfinder');
+const { pathfinder } = require('mineflayer-pathfinder');
+const { pick, say, goTo } = require('./util');
 
 const logger = createLogger('Outpost');
 const config = {};
@@ -27,17 +28,13 @@ const LINES = {
   ],
 };
 
-function _pick (arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
 let _bot = null;
 let _memory = null;
 let _timer = null;
 let _listeners = {};
 
 function _say (msg) {
-  if (config.chatEnabled && _bot) _bot.chat(msg);
+  say(_bot, config.chatEnabled, msg);
 }
 
 function _distanceToOutpost () {
@@ -57,10 +54,8 @@ async function _returnToOutpost () {
   _bot.locks.add('movement');
   try {
     logger.info(`Returning to outpost (${_distanceToOutpost().toFixed(1)} blocks away)`);
-    _say(_pick(LINES.returning));
-    const movements = new Movements(_bot);
-    _bot.pathfinder.setMovements(movements);
-    await _bot.pathfinder.goto(new GoalNear(_bot.outpost.x, _bot.outpost.y, _bot.outpost.z, 2));
+    _say(pick(LINES.returning));
+    await goTo(_bot, _bot.outpost);
   } catch (err) {
     logger.warn(`Failed to return to outpost: ${err.message}`);
   } finally {
@@ -78,7 +73,7 @@ function _onChat (username, message) {
     .catch(err => logger.warn(`Failed to save outpost: ${err.message}`));
 
   logger.info(`Outpost set to (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}) by ${username}`);
-  _say(_pick(LINES.set));
+  _say(pick(LINES.set));
 }
 
 module.exports = {
