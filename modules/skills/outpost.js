@@ -67,13 +67,20 @@ function _onChat (username, message) {
   if (username === _bot.username) return;
   if (message.trim().toLowerCase() !== config.command.toLowerCase()) return;
 
-  const pos = _bot.entity.position;
+  const player = _bot.players[username];
+  if (!player || !player.entity) {
+    logger.warn(`Cannot set outpost: player ${username} not visible`);
+    return;
+  }
+
+  const pos = player.entity.position;
   _bot.outpost = { x: pos.x, y: pos.y, z: pos.z };
   _memory.append('outpost', { event: 'set', pos: _bot.outpost })
     .catch(err => logger.warn(`Failed to save outpost: ${err.message}`));
 
   logger.info(`Outpost set to (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}) by ${username}`);
   _say(pick(LINES.set));
+  _returnToOutpost().catch(err => logger.error(`Failed to go to new outpost: ${err.message}`));
 }
 
 module.exports = {
