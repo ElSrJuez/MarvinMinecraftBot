@@ -6,7 +6,7 @@ const logger = createLogger('SkillLoader');
 
 function loadSkills (dir) {
   const skills = [];
-  const files = fs.readdirSync(dir).filter(f => f.endsWith('.js') && f !== 'loader.js');
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.js') && f !== 'loader.js' && f !== 'util.js');
   for (const file of files) {
     try {
       const skill = require(path.join(dir, file));

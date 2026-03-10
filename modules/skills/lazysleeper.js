@@ -1,5 +1,6 @@
 const { createLogger, requireEnv, parseIntRequired } = require('../log/logging');
-const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathfinder');
+const { pathfinder } = require('mineflayer-pathfinder');
+const { pick, say, goTo } = require('./util');
 
 const logger = createLogger('LazySleeper');
 const config = {};
@@ -47,22 +48,16 @@ const LINES = {
   ],
 };
 
-function _pick (arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
 let _bot = null;
 let _memory = null;
 let _active = false;
-let _wasDay = true;
 let _sleptTonight = false;
 let _lastAttempt = 0;
 let _bedIds = null;
 let _listeners = {};
 
-
 function _say (msg) {
-  if (config.chatEnabled && _bot) _bot.chat(msg);
+  say(_bot, config.chatEnabled, msg);
 }
 
 function _findNearestBed () {
@@ -70,12 +65,6 @@ function _findNearestBed () {
     matching: _bedIds,
     maxDistance: config.bedSearchRadius,
   });
-}
-
-async function _goTo (pos) {
-  const movements = new Movements(_bot);
-  _bot.pathfinder.setMovements(movements);
-  await _bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 2));
 }
 
 async function _sleepCycle () {
@@ -90,18 +79,18 @@ async function _sleepCycle () {
     const bed = _findNearestBed();
     if (!bed) {
       logger.info('No bed found nearby');
-      _say(_pick(LINES.noBed));
+      _say(pick(LINES.noBed));
       return;
     }
 
     logger.info(`Found bed at ${bed.position}`);
-    _say(_pick(LINES.goingToBed));
+    _say(pick(LINES.goingToBed));
 
     try {
-      await _goTo(bed.position);
+      await goTo(_bot, bed.position);
     } catch (err) {
       logger.warn(`Failed to pathfind to bed: ${err.message}`);
-      _say(_pick(LINES.cantReach));
+      _say(pick(LINES.cantReach));
       return;
     }
 
@@ -111,11 +100,11 @@ async function _sleepCycle () {
     try {
       await _bot.sleep(bed);
       _sleptTonight = true;
-      _say(_pick(LINES.sleeping));
+      _say(pick(LINES.sleeping));
       logger.info('Sleeping');
     } catch (err) {
       logger.warn(`Failed to sleep: ${err.message}`);
-      _say(_pick(LINES.interrupted));
+      _say(pick(LINES.interrupted));
       return;
     }
 
@@ -131,21 +120,20 @@ async function _sleepCycle () {
       return;
     }
     logger.info('Woke up');
-    _say(_pick(LINES.waking));
+    _say(pick(LINES.waking));
 
     // Return to outpost if set, otherwise stay put
     if (_bot.outpost) {
       _bot.locks.add('movement');
       try {
-        await _goTo(_bot.outpost);
-        _say(_pick(LINES.returning));
+        await goTo(_bot, _bot.outpost);
+        _say(pick(LINES.returning));
         await _memory.append('lazysleeper', { event: 'sleep_end', returned: true });
       } catch (err) {
         logger.warn(`Failed to return to outpost: ${err.message}`);
         await _memory.append('lazysleeper', { event: 'sleep_end', returned: false });
       }
     } else {
-      _say(_pick(LINES.returning));
       await _memory.append('lazysleeper', { event: 'sleep_end', returned: false });
     }
   } catch (err) {
@@ -168,7 +156,6 @@ function _onTimeUpdate () {
     _lastAttempt = Date.now();
     _sleepCycle().catch(err => logger.error(`Sleep cycle failed: ${err.message}`));
   }
-  _wasDay = isDay;
 }
 
 module.exports = {
@@ -182,7 +169,6 @@ module.exports = {
 
     _bot = bot;
     _memory = memory;
-    _wasDay = _bot.time.isDay;
 
     if (!_bot.pathfinder) {
       _bot.loadPlugin(pathfinder);
