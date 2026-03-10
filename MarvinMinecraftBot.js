@@ -2,7 +2,7 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(process.cwd(), '.env') });
 
 const mineflayer = require('mineflayer');
-const { createLogger, requireEnv, parseIntRequired } = require('./log/logging');
+const { createLogger, requireEnv, parseIntRequired } = require('./modules/log/logging');
 
 // #region Configuration Loading
 const logger = createLogger('Bot');
@@ -34,13 +34,13 @@ bot.on('end', () => logger.info('Bot disconnected'));
 bot.on('message', (jsonMsg) => logger.info(`Chat message: ${jsonMsg.toString()}`));
 
 // modules and skills
-const { loadSkills, startAll, stopAll } = require('./skills/loader');
-const memory = require('./memory/memory');
-const skills = loadSkills(path.join(__dirname, 'skills'));
+const { loadSkills, startAll, stopAll } = require('./modules/skills/loader');
+const memory = require('./modules/memory/memory');
+const skills = loadSkills(path.join(__dirname, 'modules', 'skills'));
 
 let dialogue = null;
 try {
-  const Dialogue = require('./dialogue/dialogue');
+  const Dialogue = require('./modules/dialogue/dialogue');
   dialogue = new Dialogue(bot);
 } catch (err) {
   logger.error(`Dialogue module could not be initialized: ${err.message}`);

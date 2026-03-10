@@ -38,27 +38,27 @@ npm run audit:fix
 - On spawn: starts dialogue and all skills; on end: stops all skills
 - Attaches event handlers and the `lookAtNearestPlayer` behavior
 
-**skills/loader.js** (Skill framework)
-- Auto-discovers `.js` files in `skills/` (excluding `loader.js`)
+**modules/skills/loader.js** (Skill framework)
+- Auto-discovers `.js` files in `modules/skills/` (excluding `loader.js`)
 - Each skill must export `{ name, start(bot, memory), stop() }`
 - Individually try/catches each skill load and start — one broken skill doesn't crash the bot
-- Adding a new skill = dropping a file in `skills/` that follows the contract
+- Adding a new skill = dropping a file in `modules/skills/` that follows the contract
 
-**memory/memory.js** (Shared memory module)
+**modules/memory/memory.js** (Shared memory module)
 - Canonical module for all persistent memory needs — all skills use this
-- File-backed JSONL storage: one file per skill in `MEMORY_DIR`
+- File-backed JSONL storage: one file per skill in `MEMORY_DIR` (`state/`)
 - API: `append(skill, entry)`, `read(skill, n)`, `clear(skill)`
 - Auto-trims to `MEMORY_MAX_ENTRIES` per skill on append
 - Config: MEMORY_DIR, MEMORY_MAX_ENTRIES
 
-**dialogue/dialogue.js** (Quote system)
+**modules/dialogue/dialogue.js** (Quote system)
 - Implements the Dialogue class that manages periodic quote sending
 - Fetches quotes from one or more URLs (configured via QUOTE_URL)
 - Caches quotes locally to `QUOTE_CACHE_FILE` to avoid repeated network requests
 - Only sends quotes if players are nearby (within QUOTE_RADIUS)
 - Configuration: QUOTE_ENABLED, QUOTE_URL, QUOTE_INTERVAL_MS, QUOTE_PROBABILITY, QUOTE_CACHE_FILE, QUOTE_RADIUS
 
-**log/logging.js** (Logging system)
+**modules/log/logging.js** (Logging system)
 - Provides a `createLogger(moduleName)` factory for creating module-specific loggers
 - Exports helper functions: `requireEnv()`, `parseIntRequired()`, `parseFloatRequired()`
 - Logs to both console and files (one file per module in LOG_DIR)
@@ -66,7 +66,7 @@ npm run audit:fix
 
 ### Data Flow
 
-1. Bot starts → loads config → creates Mineflayer bot → loads skills from `skills/` dir → waits for spawn event
+1. Bot starts → loads config → creates Mineflayer bot → loads skills from `modules/skills/` → waits for spawn event
 2. On spawn → Dialogue starts → all skills start (each receives bot + memory) → behaviors are active
 3. Each tick → `lookAtNearestPlayer()` executes and positions the bot's head toward nearest player
 4. Skills operate independently via their own event listeners and timers
