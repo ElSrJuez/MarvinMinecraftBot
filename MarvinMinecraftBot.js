@@ -24,9 +24,6 @@ const bot = mineflayer.createBot({
   username: config.username
 });
 
-// Named locks: skills add/delete/check by name (e.g. 'movement', 'sleeping')
-bot.locks = new Set();
-
 bot.on('login', () => logger.info(`Bot logged in as ${config.username}`));
 bot.on('kicked', (reason) => logger.warn(`Bot kicked: ${reason}`));
 bot.on('error', (err) => logger.error(`Bot error: ${err.message}`));
@@ -36,20 +33,20 @@ bot.on('message', (jsonMsg) => logger.info(`Chat message: ${jsonMsg.toString()}`
 // modules and skills
 const { loadSkills, startAll, stopAll } = require('./modules/skills/loader');
 const memory = require('./modules/memory/memory');
+const orchestrator = require('./modules/locks/orchestrator');
 const skills = loadSkills(path.join(__dirname, 'modules', 'skills'));
 
-let dialogue = null;
 try {
   const Dialogue = require('./modules/dialogue/dialogue');
-  dialogue = new Dialogue(bot);
+  bot.dialogue = new Dialogue(bot);
 } catch (err) {
   logger.error(`Dialogue module could not be initialized: ${err.message}`);
 }
 
 bot.once('spawn', async () => {
   logger.info('Bot spawned');
-  if (dialogue) {
-    dialogue.start().catch(err => logger.error(`Dialogue failed to start: ${err.message}`));
+  if (bot.dialogue) {
+    bot.dialogue.start().catch(err => logger.error(`Dialogue failed to start: ${err.message}`));
   }
   await startAll(skills, bot, memory);
 });
@@ -57,7 +54,7 @@ bot.once('spawn', async () => {
 bot.on('end', () => stopAll(skills));
 
 function lookAtNearestPlayer () {
-  if (bot.locks.has('movement')) return
+  if (!orchestrator.allowed('movement.look')) return
 
   const playerFilter = (entity) => entity.type === 'player'
   const playerEntity = bot.nearestEntity(playerFilter)

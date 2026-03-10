@@ -1,11 +1,7 @@
 const { Movements, goals: { GoalNear } } = require('mineflayer-pathfinder');
 
-function pick (arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function say (bot, chatEnabled, msg) {
-  if (chatEnabled && bot) bot.chat(msg);
+function say (bot, chatEnabled, category) {
+  if (chatEnabled && bot.dialogue) bot.dialogue.say(category);
 }
 
 async function goTo (bot, pos) {
@@ -14,4 +10,4 @@ async function goTo (bot, pos) {
   await bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 2));
 }
 
-module.exports = { pick, say, goTo };
+module.exports = { say, goTo };

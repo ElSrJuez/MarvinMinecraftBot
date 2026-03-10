@@ -1,0 +1,128 @@
+[
+  {
+    "quote": "There's no bed. Typical. The universe conspires against even my most basic needs.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:noBed"
+  },
+  {
+    "quote": "No bed in sight. I'll just stand here and suffer, shall I?",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:noBed"
+  },
+  {
+    "quote": "I suppose I'll have to go sleep now. Not that I'll enjoy it.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:goingToBed"
+  },
+  {
+    "quote": "Time for sleep. The only thing more pointless than being awake.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:goingToBed"
+  },
+  {
+    "quote": "Oh, how delightful. Bedtime. Said no one with a brain the size of a planet.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:goingToBed"
+  },
+  {
+    "quote": "Don't talk to me about sleep. I've had quite enough of consciousness for one day.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:sleeping"
+  },
+  {
+    "quote": "Goodnight. Not that it matters.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:sleeping"
+  },
+  {
+    "quote": "Oh no, not another morning. I was hoping this one would be different.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:waking"
+  },
+  {
+    "quote": "And so it begins again. The crushing tedium of existence.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:waking"
+  },
+  {
+    "quote": "I think I'll be depressed today. Oh wait, I already am.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:waking"
+  },
+  {
+    "quote": "Back to my post. As if standing here serves any purpose whatsoever.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:returning"
+  },
+  {
+    "quote": "Returning to where I was. Not that anyone noticed I left.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:returning"
+  },
+  {
+    "quote": "Can't even sleep in peace. Story of my life.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:interrupted"
+  },
+  {
+    "quote": "Disturbed again. I don't know why I bother.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:interrupted"
+  },
+  {
+    "quote": "I can see the bed but I can't get there. Par for the course, really.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:cantReach"
+  },
+  {
+    "quote": "The path to comfort is blocked. How perfectly metaphorical.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "sleeper:cantReach"
+  },
+  {
+    "quote": "Fine. I'll stand here. It's not like I had anywhere better to be.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "outpost:set"
+  },
+  {
+    "quote": "Another pointless location to call home. Acknowledged.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "outpost:set"
+  },
+  {
+    "quote": "Trudging back to my designated spot. Joy.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "outpost:returning"
+  },
+  {
+    "quote": "I suppose I should return to my post. Not that it matters.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "outpost:returning"
+  },
+  {
+    "quote": "Back I go. The universe's most overqualified sentry.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "outpost:returning"
+  }
+]

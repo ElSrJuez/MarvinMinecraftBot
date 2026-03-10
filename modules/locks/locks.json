@@ -1,0 +1,6 @@
+{
+  "safety.movement.pathfinding": {},
+  "functional.state.sleeping": {
+    "block": ["dialogue.idle", "movement", "safety.movement"]
+  }
+}
