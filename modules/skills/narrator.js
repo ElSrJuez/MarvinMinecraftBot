@@ -339,14 +339,19 @@ class Narrator {
       const providerName = config.llmProvider.toLowerCase();
       let createModel;
       try {
-        if (providerName === 'openai') {
+        if (config.llmEndpoint) {
+          // Use openai-compatible provider for custom endpoints
+          const { createOpenAICompatible } = require('@ai-sdk/openai-compatible');
+          const provider = createOpenAICompatible({
+            name: 'custom',
+            apiKey: config.llmApiKey,
+            baseURL: config.llmEndpoint
+          });
+          createModel = () => provider(config.llmModel);
+          logger.info(`Using OpenAI-compatible endpoint: ${config.llmEndpoint}`);
+        } else if (providerName === 'openai') {
           const { openai } = require('@ai-sdk/openai');
-          const options = { apiKey: config.llmApiKey };
-          if (config.llmEndpoint) {
-            options.baseURL = config.llmEndpoint;
-            logger.info(`Using custom LLM endpoint: ${config.llmEndpoint}`);
-          }
-          createModel = () => openai(config.llmModel, options);
+          createModel = () => openai(config.llmModel, { apiKey: config.llmApiKey });
         } else if (providerName === 'anthropic') {
           const { anthropic } = require('@ai-sdk/anthropic');
           createModel = () => anthropic(config.llmModel, { apiKey: config.llmApiKey });
