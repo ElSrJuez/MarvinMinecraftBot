@@ -1,6 +1,7 @@
 const { createLogger, requireEnv, parseIntRequired, parseFloatRequired } = require('../log/logging');
 const { pathfinder } = require('mineflayer-pathfinder');
-const { pick, say, goTo } = require('./util');
+const { say, goTo } = require('./util');
+const orchestrator = require('../locks/orchestrator');
 
 const logger = createLogger('Outpost');
 const config = {};
@@ -16,25 +17,13 @@ try {
   throw err;
 }
 
-const LINES = {
-  set: [
-    "Fine. I'll stand here. It's not like I had anywhere better to be.",
-    "Another pointless location to call home. Acknowledged.",
-  ],
-  returning: [
-    "Trudging back to my designated spot. Joy.",
-    "I suppose I should return to my post. Not that it matters.",
-    "Back I go. The universe's most overqualified sentry.",
-  ],
-};
-
 let _bot = null;
 let _memory = null;
 let _timer = null;
 let _listeners = {};
 
-function _say (msg) {
-  say(_bot, config.chatEnabled, msg);
+function _say (category) {
+  say(_bot, config.chatEnabled, category);
 }
 
 function _distanceToOutpost () {
@@ -48,18 +37,19 @@ function _distanceToOutpost () {
 
 async function _returnToOutpost () {
   if (!_bot.outpost) return;
-  if (_bot.locks.has('movement') || _bot.locks.has('sleeping')) return;
   if (_distanceToOutpost() <= config.returnRadius) return;
 
-  _bot.locks.add('movement');
   try {
-    logger.info(`Returning to outpost (${_distanceToOutpost().toFixed(1)} blocks away)`);
-    _say(pick(LINES.returning));
-    await goTo(_bot, _bot.outpost);
+    const result = await orchestrator.run('safety.movement.pathfinding', async () => {
+      logger.info(`Returning to outpost (${_distanceToOutpost().toFixed(1)} blocks away)`);
+      _say('outpost:returning');
+      await goTo(_bot, _bot.outpost);
+    });
+    if (result === null) {
+      logger.debug('Outpost return denied by orchestrator');
+    }
   } catch (err) {
     logger.warn(`Failed to return to outpost: ${err.message}`);
-  } finally {
-    if (_bot) _bot.locks.delete('movement');
   }
 }
 
@@ -79,7 +69,7 @@ function _onChat (username, message) {
     .catch(err => logger.warn(`Failed to save outpost: ${err.message}`));
 
   logger.info(`Outpost set to (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}) by ${username}`);
-  _say(pick(LINES.set));
+  _say('outpost:set');
   _returnToOutpost().catch(err => logger.error(`Failed to go to new outpost: ${err.message}`));
 }
 
@@ -125,7 +115,6 @@ module.exports = {
     if (_bot && _listeners.chat) {
       _bot.removeListener('chat', _listeners.chat);
     }
-    if (_bot) _bot.locks.delete('movement');
     _listeners = {};
     _bot = null;
     _memory = null;
