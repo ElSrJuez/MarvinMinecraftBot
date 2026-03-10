@@ -35,15 +35,9 @@ function allowed (trigger) {
     const rule = rules[lock] || {};
 
     if (type === 'safety') {
-      if (!_matchesAny(trigger, rule.allow)) {
-        logger.debug(`${trigger} blocked by safety lock ${lock}`);
-        return false;
-      }
+      if (!_matchesAny(trigger, rule.allow)) return false;
     } else if (type === 'functional') {
-      if (_matchesAny(trigger, rule.block)) {
-        logger.debug(`${trigger} blocked by functional lock ${lock}`);
-        return false;
-      }
+      if (_matchesAny(trigger, rule.block)) return false;
     }
   }
   return true;

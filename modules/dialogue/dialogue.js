@@ -30,7 +30,6 @@ class Dialogue {
     this._running = false;
   }
 
-  // Read the canonical quote file; seed from quotes.json if it doesn't exist yet
   async _readCanonical () {
     try {
       const txt = await fs.readFile(config.cacheFile, 'utf8')
@@ -41,20 +40,21 @@ class Dialogue {
         logger.warn(`failed to read canonical file: ${err.message}`)
       }
     }
+    return []
+  }
 
-    // Seed from the configured seed file
+  async _readSeed () {
+    const seedPath = path.resolve(config.seedFile)
     try {
-      const seedPath = path.resolve(config.seedFile)
       const txt = await fs.readFile(seedPath, 'utf8')
       const data = JSON.parse(txt)
       if (Array.isArray(data) && data.length) {
-        logger.info(`seeded canonical file from ${seedPath}`)
+        logger.info(`loaded ${data.length} quotes from seed file ${seedPath}`)
         return data
       }
     } catch (err) {
       logger.error(`failed to read seed file ${config.seedFile}: ${err.message}`)
     }
-
     return []
   }
 
@@ -94,10 +94,10 @@ class Dialogue {
     return results
   }
 
-  _merge (existing, remote) {
+  _merge (existing, incoming, label) {
     const seen = new Set(existing.map(e => `${e.source}\t${e.quote}`))
     let added = 0
-    for (const entry of remote) {
+    for (const entry of incoming) {
       const key = `${entry.source}\t${entry.quote}`
       if (!seen.has(key)) {
         existing.push(entry)
@@ -105,7 +105,7 @@ class Dialogue {
         added++
       }
     }
-    if (added) logger.info(`merged ${added} new remote quotes into canonical file`)
+    if (added) logger.info(`merged ${added} new ${label} quotes into canonical file`)
     return existing
   }
 
@@ -137,14 +137,12 @@ class Dialogue {
 
   async loadQuotes () {
     let entries = await this._readCanonical()
+    const before = entries.length
+    const seed = await this._readSeed()
+    if (seed.length) this._merge(entries, seed, 'seed')
     const remote = await this._fetchRemote()
-    if (remote.length) {
-      entries = this._merge(entries, remote)
-      await this._writeCanonical(entries)
-    } else if (entries.length) {
-      // Ensure canonical file exists on disk (seeded but not yet written)
-      await this._writeCanonical(entries)
-    }
+    if (remote.length) this._merge(entries, remote, 'remote')
+    if (entries.length !== before || entries.length) await this._writeCanonical(entries)
     this._index(entries)
   }
 
