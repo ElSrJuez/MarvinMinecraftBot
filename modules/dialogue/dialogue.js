@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { createLogger, requireEnv, parseIntRequired, parseFloatRequired } = require('../log/logging');
 const orchestrator = require('../locks/orchestrator');
+const { playersNearby } = require('../skills/util');
 
 // #region Configuration Loading
 const logger = createLogger('Dialogue');
@@ -152,30 +153,13 @@ class Dialogue {
     const q = this._pick('idle')
     if (!q) return
 
-    if (!this._playersNearby(config.radius)) {
+    if (!playersNearby(this.bot, config.radius)) {
       logger.debug(`no players within radius ${config.radius}; skipping quote`)
       return
     }
 
     logger.info(`sending quote: ${q.length} chars`)
     this.bot.chat(q)
-  }
-
-  _playersNearby (radius) {
-    if (!this.bot.entity) return false
-    const mePos = this.bot.entity.position
-    const players = Object.keys(this.bot.players).filter(n => n !== this.bot.username)
-    const r2 = radius * radius
-    for (const name of players) {
-      const p = this.bot.players[name]
-      if (!p.entity || !p.entity.position) continue
-      const pos = p.entity.position
-      const dx = pos.x - mePos.x
-      const dy = pos.y - mePos.y
-      const dz = pos.z - mePos.z
-      if (dx * dx + dy * dy + dz * dz <= r2) return true
-    }
-    return false
   }
 
   async start () {

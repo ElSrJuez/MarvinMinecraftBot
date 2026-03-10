@@ -124,5 +124,29 @@
     "person": "Marvin",
     "source": "local",
     "category": "outpost:returning"
+  },
+  {
+    "quote": "My attempts at commentary have failed. My brain is clearly in worse condition than I thought.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "narrator:error"
+  },
+  {
+    "quote": "I was going to share my thoughts, but they've gone missing. Fitting, really.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "narrator:error"
+  },
+  {
+    "quote": "I'd tell you what I think about all this, but my brain hurts.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "narrator:error"
+  },
+  {
+    "quote": "Even my observations are disappointing. I've let myself down.",
+    "person": "Marvin",
+    "source": "local",
+    "category": "narrator:error"
   }
 ]

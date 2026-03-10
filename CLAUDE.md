@@ -40,6 +40,7 @@ modules/
   skills/narrator/             Narrator data definitions
     polling_sink.json          Declarative polling source definitions
     event_sink.json            Declarative event subscription definitions
+    prompts.json               LLM prompt artifacts (persona, templates, fragments)
   skills/util.js               Shared skill utilities
 design/                        System design documents
   DIALOGUE.md                  Dialogue engine design

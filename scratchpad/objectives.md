@@ -18,7 +18,8 @@ MarvinMinecraftBot.js  (entry point — boots bot, loads skills)
 │       ├── narrator.js        (skill: observe + LLM commentary — STUB)
 │       └── narrator/
 │           ├── polling_sink.json  (declarative polling source definitions)
-│           └── event_sink.json    (declarative event subscription definitions)
+│           ├── event_sink.json    (declarative event subscription definitions)
+│           └── prompts.json       (LLM prompt artifacts — persona, templates, fragments)
 └── state/                     (runtime state — lock state, quote cache, memory files)
 ```
 

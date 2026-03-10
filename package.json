@@ -13,6 +13,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "ai": "^6.0.116",
     "dotenv": "^16.0.0",
     "mineflayer": "^4.35.0",
     "mineflayer-pathfinder": "^2.4.5"

@@ -139,6 +139,9 @@ The narrator only uses `orchestrator.allowed('dialogue.narrator')` — read-only
 | `NARRATOR_LLM_PROVIDER` | AI SDK provider (e.g. `openai`, `anthropic`) |
 | `NARRATOR_LLM_MODEL` | Model identifier |
 | `NARRATOR_LLM_API_KEY` | API key for the LLM service |
+| `NARRATOR_LLM_TEMPERATURE` | LLM temperature |
+| `NARRATOR_LLM_MAX_TOKENS` | Max tokens for LLM response |
+| `NARRATOR_PROMPTS_FILE` | Path to prompts artifact JSON (prompt templates, persona, etc.) |
 
 ## Edge Cases
 
@@ -161,6 +164,7 @@ The narrator only uses `orchestrator.allowed('dialogue.narrator')` — read-only
 - `design/MINEFLAYER_EVENTS.md` — full mineflayer event inventory with signatures and notes
 - `skills/narrator/polling_sink.json` — declarative polling source definitions
 - `skills/narrator/event_sink.json` — declarative event subscription definitions
+- `skills/narrator/prompts.json` — LLM prompt artifacts (persona, templates, instruction fragments)
 
 ---
 
