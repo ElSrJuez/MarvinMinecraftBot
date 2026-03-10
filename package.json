@@ -13,6 +13,9 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@ai-sdk/anthropic": "^0.0.55",
+    "@ai-sdk/google": "^0.0.52",
+    "@ai-sdk/openai": "^0.0.60",
     "ai": "^6.0.116",
     "dotenv": "^16.0.0",
     "mineflayer": "^4.35.0",
