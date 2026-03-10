@@ -19,6 +19,7 @@ try {
   config.llmProvider = requireEnv('Narrator', 'NARRATOR_LLM_PROVIDER');
   config.llmModel = requireEnv('Narrator', 'NARRATOR_LLM_MODEL');
   config.llmApiKey = requireEnv('Narrator', 'NARRATOR_LLM_API_KEY');
+  config.llmEndpoint = requireEnv('Narrator', 'NARRATOR_LLM_ENDPOINT');
   config.llmTemperature = parseFloatRequired('Narrator', 'NARRATOR_LLM_TEMPERATURE');
   config.llmMaxTokens = parseIntRequired('Narrator', 'NARRATOR_LLM_MAX_TOKENS');
   config.promptsFile = requireEnv('Narrator', 'NARRATOR_PROMPTS_FILE');
@@ -151,7 +152,7 @@ class Narrator {
       if (entity.type !== 'mob') continue;
       const dist = entity.position.distanceTo(this.bot.entity.position);
       if (dist > config.observeRadius) continue;
-      const mobType = entity.mobType || entity.name || 'unknown';
+      const mobType = entity.displayName?.toString() || entity.name || 'unknown';
       nearbyMobs[mobType] = (nearbyMobs[mobType] || 0) + 1;
     }
     for (const mobType in nearbyMobs) {
@@ -340,7 +341,12 @@ class Narrator {
       try {
         if (providerName === 'openai') {
           const { openai } = require('@ai-sdk/openai');
-          createModel = () => openai(config.llmModel, { apiKey: config.llmApiKey });
+          const options = { apiKey: config.llmApiKey };
+          if (config.llmEndpoint) {
+            options.baseURL = config.llmEndpoint;
+            logger.info(`Using custom LLM endpoint: ${config.llmEndpoint}`);
+          }
+          createModel = () => openai(config.llmModel, options);
         } else if (providerName === 'anthropic') {
           const { anthropic } = require('@ai-sdk/anthropic');
           createModel = () => anthropic(config.llmModel, { apiKey: config.llmApiKey });
