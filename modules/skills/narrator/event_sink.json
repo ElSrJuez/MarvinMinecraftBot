@@ -1,0 +1,78 @@
+{
+  "_doc": "Event sink: discrete mineflayer events worth subscribing to. Each entry defines the event, a filter to ignore irrelevant firings, and the observation template. Kept minimal — only events that polling cannot catch.",
+
+  "subscriptions": [
+    {
+      "id": "blockMining",
+      "event": "blockBreakProgressObserved",
+      "signature": "(block, destroyStage, entity)",
+      "filter": "entity.type === 'player' && entity !== bot.entity && destroyStage === 0",
+      "extract": "{ player: entity.username, block: block.name }",
+      "observation": "{player} started mining {block}.",
+      "note": "destroyStage===0 means mining just started. Ignoring later stages avoids 9 observations per block. Only fires if the block is in Marvin's loaded chunks — naturally distance-gated."
+    },
+    {
+      "id": "chat",
+      "event": "chat",
+      "signature": "(username, message, translate, jsonMsg, matches)",
+      "filter": "username !== bot.username",
+      "extract": "{ player: username, message: message }",
+      "observation": "{player} said: \"{message}\"",
+      "note": "Chat works regardless of distance. Gives Marvin something to react to even when the player is far away. May want to exclude bot commands (outpost trigger etc.) to avoid narrating skill interactions."
+    },
+    {
+      "id": "playerJoined",
+      "event": "playerJoined",
+      "signature": "(player)",
+      "filter": "player.username !== bot.username",
+      "extract": "{ player: player.username }",
+      "observation": "{player} joined the server."
+    },
+    {
+      "id": "playerLeft",
+      "event": "playerLeft",
+      "signature": "(player)",
+      "filter": "player.username !== bot.username",
+      "extract": "{ player: player.username }",
+      "observation": "{player} left the server."
+    },
+    {
+      "id": "entityDeath",
+      "event": "entityDead",
+      "signature": "(entity)",
+      "filter": "entity.position.distanceTo(bot.entity.position) < radius",
+      "extract": "{ name: entity.username ?? entity.name ?? entity.mobType, type: entity.type }",
+      "observation": "{name} died nearby.",
+      "note": "Covers players and mobs. Marvin witnessing death is thematically on-brand."
+    },
+    {
+      "id": "entityHurt",
+      "event": "entityHurt",
+      "signature": "(entity)",
+      "filter": "entity.type === 'player' && entity !== bot.entity && entity.position.distanceTo(bot.entity.position) < radius",
+      "extract": "{ player: entity.username }",
+      "observation": "{player} took damage.",
+      "dedupe": "cooldown",
+      "cooldownMs": 5000,
+      "note": "Players can take rapid successive damage. Cooldown per-player prevents spam. Only tracking players — mob damage is too noisy."
+    },
+    {
+      "id": "chestInteraction",
+      "event": "chestLidMove",
+      "signature": "(block, isOpen, block2)",
+      "filter": "block.position.distanceTo(bot.entity.position) < radius",
+      "extract": "{ action: isOpen ? 'opened' : 'closed' }",
+      "observation": "Someone {action} a chest nearby.",
+      "note": "Can't tell WHO opened it, just that it happened. But it means someone is rummaging around near Marvin."
+    },
+    {
+      "id": "explosion",
+      "event": "soundEffectHeard",
+      "signature": "(soundName, position, volume, pitch)",
+      "filter": "soundName.includes('explosion') || soundName.includes('thunder')",
+      "extract": "{ sound: soundName }",
+      "observation": "Heard a {sound}.",
+      "note": "Very selective — only explosions and thunder. Ambient drama for Marvin to react to. Sound events carry position so distance filtering is possible too."
+    }
+  ]
+}

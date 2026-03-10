@@ -1,0 +1,123 @@
+{
+  "_doc": "Polling sink: state read on an interval and diffed against previous snapshot. Each entry defines a field to read, how to extract it, and what constitutes a meaningful change worth recording.",
+
+  "sources": [
+    {
+      "id": "nearestPlayer",
+      "read": "bot.nearestEntity(e => e.type === 'player' && e !== bot.entity)",
+      "fields": {
+        "present": {
+          "extract": "entity !== null",
+          "diff": "boolean",
+          "observations": {
+            "true→false": "{player} walked away. Alone again.",
+            "false→true": "{player} showed up."
+          }
+        },
+        "distance": {
+          "extract": "entity.position.distanceTo(bot.entity.position)",
+          "diff": "threshold",
+          "threshold": 5,
+          "observations": {
+            "decreased": "{player} is getting closer.",
+            "increased": "{player} is moving away."
+          },
+          "note": "Only meaningful when present=true. Threshold avoids jitter noise."
+        },
+        "heldItem": {
+          "extract": "entity.heldItem?.name ?? 'empty'",
+          "diff": "string",
+          "observation": "{player} switched to {value}."
+        },
+        "sneaking": {
+          "extract": "entity.crouching ?? false",
+          "diff": "boolean",
+          "observations": {
+            "false→true": "{player} started sneaking.",
+            "true→false": "{player} stopped sneaking."
+          }
+        }
+      },
+      "note": "Primary observation target. All fields gated on entity != null."
+    },
+    {
+      "id": "playerCount",
+      "read": "Object.values(bot.players).filter(p => p.entity && p.entity !== bot.entity).length",
+      "diff": "number",
+      "observations": {
+        "0": "Nobody around.",
+        "increased": "More people nearby now.",
+        "decreased": "Someone left."
+      },
+      "note": "Coarse headcount. Cheaper than tracking every player individually."
+    },
+    {
+      "id": "timeOfDay",
+      "read": "bot.time.timeOfDay",
+      "diff": "bands",
+      "bands": {
+        "dawn":      [0, 2000],
+        "morning":   [2000, 6000],
+        "midday":    [6000, 9000],
+        "afternoon": [9000, 12000],
+        "dusk":      [12000, 13500],
+        "night":     [13500, 22500],
+        "lateNight": [22500, 24000]
+      },
+      "observation": "It's {band} now.",
+      "note": "Only fires on band transitions, not every tick. Gives Marvin something to grumble about."
+    },
+    {
+      "id": "weather",
+      "fields": {
+        "raining": {
+          "read": "bot.isRaining",
+          "diff": "boolean",
+          "observations": {
+            "false→true": "It started raining.",
+            "true→false": "Rain stopped."
+          }
+        },
+        "thundering": {
+          "read": "bot.thunderState > 0.5",
+          "diff": "boolean",
+          "observations": {
+            "false→true": "Thunder rolling in.",
+            "true→false": "Thunder subsided."
+          }
+        }
+      }
+    },
+    {
+      "id": "nearbyMobs",
+      "read": "Object.values(bot.entities).filter(e => e.type === 'mob' && e.position.distanceTo(bot.entity.position) < radius)",
+      "diff": "countByName",
+      "observation": "{count} {name}(s) nearby.",
+      "note": "Grouped count by mob name. Diff detects new mob types appearing or disappearing. Marvin can complain about creepers lurking around."
+    },
+    {
+      "id": "botHealth",
+      "read": "bot.health",
+      "diff": "threshold",
+      "threshold": 2,
+      "observations": {
+        "decreased": "Something hurt me. How delightful.",
+        "low": "Health dangerously low. Not that I care."
+      },
+      "note": "Marvin's own health. Threshold prevents noise from regen ticks."
+    },
+    {
+      "id": "loneliness",
+      "read": "derived",
+      "derivedFrom": "nearestPlayer.present",
+      "diff": "duration",
+      "durationThresholds": [60000, 300000, 600000],
+      "observations": {
+        "60000": "Nobody's been here for a minute.",
+        "300000": "Five minutes alone. A new record in tedium.",
+        "600000": "Ten minutes. I think they've forgotten about me."
+      },
+      "note": "Timer starts when no player is present. Resets when someone arrives. This is peak Marvin."
+    }
+  ]
+}
