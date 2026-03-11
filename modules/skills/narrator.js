@@ -14,7 +14,6 @@ try {
   config.chatEnabled = requireEnv('Narrator', 'NARRATOR_CHAT_ENABLED') === 'true';
   config.observeRadius = parseFloatRequired('Narrator', 'NARRATOR_OBSERVE_RADIUS');
   config.pollIntervalMs = parseIntRequired('Narrator', 'NARRATOR_POLL_INTERVAL_MS');
-  config.llmIntervalMs = parseIntRequired('Narrator', 'NARRATOR_LLM_INTERVAL_MS');
   config.maxObservations = parseIntRequired('Narrator', 'NARRATOR_MAX_OBSERVATIONS');
   config.llmProvider = requireEnv('Narrator', 'NARRATOR_LLM_PROVIDER');
   config.llmModel = requireEnv('Narrator', 'NARRATOR_LLM_MODEL');
@@ -38,7 +37,6 @@ class Narrator {
     this._eventHandlers = [];
     this._prompts = {};
     this._lastSnapshotTime = 0;
-    this._lastLlmTime = 0;
     this._snapshot = {
       nearestPlayer: null,
       playerCount: 0,
@@ -372,13 +370,10 @@ class Narrator {
 
   async getCommentary () {
     // Called by coordinator; returns LLM text or null without chatting
-    const now = Date.now();
-    if (now - this._lastLlmTime < config.llmIntervalMs) return null;
     if (this._active) return null;
     if (!this._observations.length) return null;
     if (!playersNearby(this.bot, config.observeRadius)) return null;
 
-    this._lastLlmTime = now;
     this._active = true;
 
     try {
@@ -436,19 +431,14 @@ class Narrator {
 
     this._subscribeToEvents();
 
-    // Polling loop
+    // Polling loop (observation collection)
     const pollTimer = setInterval(() => {
       this._pollSnapshot();
       this._pollDerivedSources();
     }, config.pollIntervalMs);
     this._timers.push(pollTimer);
 
-    // Narration loop
-    const llmTimer = setInterval(() => {
-      this._maybeNarrate();
-    }, config.llmIntervalMs);
-    this._timers.push(llmTimer);
-
+    // LLM narration is triggered by coordinator on its cadence
     logger.info('Narrator active');
   }
 
