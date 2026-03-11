@@ -7,7 +7,7 @@ const { playersNearby } = require('./util');
 
 // #region Configuration Loading
 const logger = createLogger('Narrator');
-const promptLogger = createLogger('NarratorPrompts');
+const promptLogger = createLogger('NarratorPrompts', { fileOnly: true });
 const config = {};
 
 try {
@@ -272,7 +272,7 @@ class Narrator {
         const dedupeKey = `loneliness:${threshold}`;
         if (aloneMs >= threshold && !this._dedupeTrackers[dedupeKey]) {
           const obs = source.observations[String(threshold)];
-          if (obs) this._pushObservation(source.id, obs);
+          if (obs) this._pushObservation(source.id, this._template(obs, { minutes: Math.floor(aloneMs / 60000) }));
           this._dedupeTrackers[dedupeKey] = true;
         }
       }
@@ -339,16 +339,67 @@ class Narrator {
       const currKeys = new Set(Object.keys(current || {}));
 
       for (const name of currKeys) {
-        if (!prevKeys.has(name)) {
-          this._pushObservation(id, this._template(spec.observation, { ...templateData, count: current[name], name }));
+        if (!prevKeys.has(name) && spec.observations?.appeared) {
+          this._pushObservation(id, this._template(spec.observations.appeared, { ...templateData, count: current[name], name }));
         }
       }
       for (const name of prevKeys) {
-        if (!currKeys.has(name)) {
-          this._pushObservation(id, `No more ${name}(s).`);
+        if (!currKeys.has(name) && spec.observations?.disappeared) {
+          this._pushObservation(id, this._template(spec.observations.disappeared, { ...templateData, name }));
         }
       }
     }
+  }
+
+  // #endregion
+
+  // #region State Snapshot
+
+  _buildStateSnapshot () {
+    const lines = [];
+
+    for (const source of this._pollingSources) {
+      if (source.fields) {
+        const entity = this._pollState[source.id];
+        const templateData = {};
+        if (entity && entity.username) templateData.player = entity.username;
+
+        for (const [fieldName, field] of Object.entries(source.fields)) {
+          if (!field.stateTemplate) continue;
+          const value = this._pollState[`${source.id}.${fieldName}`];
+          const line = this._resolveStateTemplate(field.stateTemplate, value, { ...templateData, value });
+          if (line) lines.push(line);
+        }
+      } else if (source.stateTemplate && source.read !== 'derived') {
+        const value = this._pollState[source.id];
+        if (value === undefined) continue;
+
+        // bands: resolve current band name
+        if (source.diff === 'bands') {
+          let band = null;
+          for (const [name, [min, max]] of Object.entries(source.bands)) {
+            if (value >= min && value < max) { band = name; break; }
+          }
+          if (band) lines.push(this._template(source.stateTemplate, { band }));
+        } else {
+          const line = this._resolveStateTemplate(source.stateTemplate, value, { value });
+          if (line) lines.push(line);
+        }
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  _resolveStateTemplate (tpl, value, templateData) {
+    if (typeof tpl === 'string') {
+      return this._template(tpl, templateData);
+    }
+    // Object form: keyed by value (e.g., { "true": "It's raining.", "false": null })
+    const key = String(value);
+    const text = tpl[key];
+    if (!text) return null;
+    return this._template(text, templateData);
   }
 
   // #endregion
@@ -425,8 +476,8 @@ class Narrator {
     try {
       const model = await this._getModel();
 
-      const recent = this._observations.slice(-10);
-      const aggregated = this._aggregateObservations(recent);
+      const stateStr = this._buildStateSnapshot();
+      const aggregated = this._aggregateObservations(this._observations);
 
       const observationStr = aggregated
         .map(obs => this._prompts.observationFormat
@@ -435,12 +486,15 @@ class Narrator {
         .join('\n');
 
       const historyStr = this._narrationHistory.length > 0
-        ? `\n\nYou just said:\n${this._narrationHistory.map(n => `• ${n}`).join('\n')}\n\nDon't repeat these themes.`
+        ? this._prompts.narrationMemory.replace('{history}',
+            this._narrationHistory.map(n => `• ${n}`).join('\n'))
         : '';
 
-      const userPrompt = (this._observations.length === 0
+      const basePrompt = this._observations.length === 0
         ? this._prompts.noObservations
-        : this._prompts.user.replace('{observations}', observationStr)) + historyStr;
+        : this._prompts.user.replace('{observations}', observationStr);
+
+      const userPrompt = basePrompt.replace('{state}', stateStr || 'Nothing notable.') + historyStr;
 
       promptLogger.info(`[NARRATION REQUEST] Raw: ${this._observations.length} → Aggregated: ${aggregated.length}, Memory: ${this._narrationHistory.length}/${config.narrationMemorySize}`);
       promptLogger.debug(`[SYSTEM PROMPT]\n${this._prompts.system}`);

@@ -20,19 +20,21 @@ fs.mkdir(LOG_DIR, { recursive: true }).catch(err => {
 // #endregion
 
 // #region Logger Implementation
-async function log(level, moduleName, msg) {
+async function log(level, moduleName, msg, fileOnly) {
   if (levels[level] < currentLogLevel) return;
 
   const ts = new Date().toISOString();
   const line = `[${ts}] [${moduleName}] [${level}] ${msg}`;
 
-  // Always log to console
-  if (level === 'error') {
-    console.error(line);
-  } else if (level === 'warn') {
-    console.warn(line);
-  } else {
-    console.log(line);
+  // Log to console unless fileOnly
+  if (!fileOnly) {
+    if (level === 'error') {
+      console.error(line);
+    } else if (level === 'warn') {
+      console.warn(line);
+    } else {
+      console.log(line);
+    }
   }
 
   // Log to file
@@ -44,12 +46,13 @@ async function log(level, moduleName, msg) {
   }
 }
 
-function createLogger(moduleName) {
+function createLogger(moduleName, options) {
+  const fileOnly = options?.fileOnly ?? false;
   return {
-    debug: (msg) => log('debug', moduleName, msg),
-    info: (msg) => log('info', moduleName, msg),
-    warn: (msg) => log('warn', moduleName, msg),
-    error: (msg) => log('error', moduleName, msg),
+    debug: (msg) => log('debug', moduleName, msg, fileOnly),
+    info: (msg) => log('info', moduleName, msg, fileOnly),
+    warn: (msg) => log('warn', moduleName, msg, fileOnly),
+    error: (msg) => log('error', moduleName, msg, fileOnly),
   };
 }
 // #endregion
