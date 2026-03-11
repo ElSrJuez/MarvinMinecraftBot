@@ -27,16 +27,18 @@ npm run audit:fix
 ## Project Structure
 
 ```
-MarvinMinecraftBot.js          Entry point — boots bot, wires skills, starts dialogue
+MarvinMinecraftBot.js          Entry point — boots bot, wires skills, starts dialogue + coordinator
 modules/
   dialogue/dialogue.js         Canonical dialogue engine
+  dialogue/coordinator.js      Commentary cadence manager (narration, quotes, idle)
+  dialogue/commentary-sources.json  Config: priority queue of dialogue sources
   dialogue/quotes.json         Seed file — Marvin's situational lines
   locks/orchestrator.js        Lock orchestrator — central gatekeeper for all actions
   locks/locks.json             Lock suppression rules
   log/logging.js               Logging + env helpers
   skills/lazysleeper.js        Skill: sleep in beds at night
   skills/outpost.js            Skill: remember and return to a position
-  skills/narrator.js           Skill: observe + LLM commentary (stub)
+  skills/narrator.js           Skill: observe + LLM commentary
   skills/narrator/             Narrator data definitions
     polling_sink.json          Declarative polling source definitions
     event_sink.json            Declarative event subscription definitions

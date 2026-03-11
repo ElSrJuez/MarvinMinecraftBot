@@ -370,13 +370,13 @@ class Narrator {
     return this._model;
   }
 
-  async _maybeNarrate () {
+  async getCommentary () {
+    // Called by coordinator; returns LLM text or null without chatting
     const now = Date.now();
-    if (now - this._lastLlmTime < config.llmIntervalMs) return;
-    if (this._active) return;
-    if (!this._observations.length) return;
-    if (!orchestrator.allowed('dialogue.narrator')) return;
-    if (!playersNearby(this.bot, config.observeRadius)) return;
+    if (now - this._lastLlmTime < config.llmIntervalMs) return null;
+    if (this._active) return null;
+    if (!this._observations.length) return null;
+    if (!playersNearby(this.bot, config.observeRadius)) return null;
 
     this._lastLlmTime = now;
     this._active = true;
@@ -406,20 +406,19 @@ class Narrator {
       });
 
       if (response.text && response.text.trim()) {
-        if (config.chatEnabled) {
-          this.bot.chat(response.text.trim());
-        }
         this._observations = [];
-        logger.info(`narration sent: ${response.text.length} chars`);
+        logger.debug(`narration generated: ${response.text.length} chars`);
+        return response.text.trim();
       }
     } catch (err) {
       logger.warn(`narration failed: ${err.message}`);
-      if (config.chatEnabled && this.bot.dialogue) {
-        this.bot.dialogue.say('narrator:error');
-      }
+      // Return fallback error quote via coordinator
+      return null;
     } finally {
       this._active = false;
     }
+
+    return null;
   }
 
   async start () {
@@ -484,5 +483,10 @@ module.exports = {
       narratorInstance.stop();
       narratorInstance = null;
     }
+  },
+
+  async getCommentary() {
+    if (!narratorInstance) return null;
+    return await narratorInstance.getCommentary();
   }
 };

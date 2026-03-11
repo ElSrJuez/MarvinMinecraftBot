@@ -1,0 +1,21 @@
+{
+  "_doc": "Commentary source priority queue. Coordinator tries each in order, picks first non-null response. No hardcoded routing in code.",
+  "sources": [
+    {
+      "name": "Narrator",
+      "type": "narrator"
+    },
+    {
+      "name": "Quote:marvin",
+      "type": "dialogue",
+      "category": "idle",
+      "filter": { "source": "local" }
+    },
+    {
+      "name": "Quote:douglas",
+      "type": "dialogue",
+      "category": "idle",
+      "filter": { "source": "remote" }
+    }
+  ]
+}

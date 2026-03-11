@@ -101,6 +101,9 @@ class Dialogue {
     for (const entry of incoming) {
       const key = `${entry.source}\t${entry.quote}`
       if (!seen.has(key)) {
+        // Mark source origin (local=seed, remote=fetched)
+        if (label === 'seed' && !entry.origin) entry.origin = 'local'
+        if (label === 'remote' && !entry.origin) entry.origin = 'remote'
         existing.push(entry)
         seen.add(key)
         added++
@@ -130,6 +133,15 @@ class Dialogue {
     return pool[Math.floor(Math.random() * pool.length)].trim()
   }
 
+  pickRandom (category, filter) {
+    // Returns a random quote from category, optionally filtered
+    // Note: filter is ignored for now; to support source filtering,
+    // quotes would need separate categories (idle:marvin, idle:douglas)
+    const pool = this._categories[category]
+    if (!pool || !pool.length) return null
+    return pool[Math.floor(Math.random() * pool.length)].trim()
+  }
+
   say (category) {
     const q = this._pick(category)
     if (q) this.bot.chat(q)
@@ -147,19 +159,18 @@ class Dialogue {
     this._index(entries)
   }
 
-  _maybeQuote () {
-    if (Math.random() > config.probability) return
-    if (!orchestrator.allowed('dialogue.idle')) return
-    const q = this._pick('idle')
-    if (!q) return
+  getCommentary () {
+    // Called by coordinator; returns a random quote or null
+    if (Math.random() > config.probability) return null
+    const q = this.pickRandom('idle')
+    if (!q) return null
 
     if (!playersNearby(this.bot, config.radius)) {
       logger.debug(`no players within radius ${config.radius}; skipping quote`)
-      return
+      return null
     }
 
-    logger.info(`sending quote: ${q.length} chars`)
-    this.bot.chat(q)
+    return q
   }
 
   async start () {
@@ -175,13 +186,11 @@ class Dialogue {
       logger.warn('No quotes available after load; dialogue will be disabled')
       return
     }
-    this._timer = setInterval(() => this._maybeQuote(), config.intervalMs)
-    setTimeout(() => this._maybeQuote(), 2000)
+    // Timer removed — coordinator manages dialogue cadence
+    logger.info('Dialogue loaded and ready')
   }
 
   stop () {
-    if (this._timer) clearInterval(this._timer)
-    this._timer = null
     this._running = false
   }
 }

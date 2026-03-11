@@ -34,6 +34,8 @@ bot.on('message', (jsonMsg) => logger.info(`Chat message: ${jsonMsg.toString()}`
 const { loadSkills, startAll, stopAll } = require('./modules/skills/loader');
 const memory = require('./modules/memory/memory');
 const orchestrator = require('./modules/locks/orchestrator');
+const DialogueCoordinator = require('./modules/dialogue/coordinator');
+const narrator = require('./modules/skills/narrator');
 const skills = loadSkills(path.join(__dirname, 'modules', 'skills'));
 
 try {
@@ -43,15 +45,30 @@ try {
   logger.error(`Dialogue module could not be initialized: ${err.message}`);
 }
 
+let coordinator = null;
+
 bot.once('spawn', async () => {
   logger.info('Bot spawned');
   if (bot.dialogue) {
     bot.dialogue.start().catch(err => logger.error(`Dialogue failed to start: ${err.message}`));
   }
   await startAll(skills, bot, memory);
+
+  // Wire up coordinator after dialogue and narrator are ready
+  if (bot.dialogue && narrator) {
+    try {
+      coordinator = new DialogueCoordinator(bot, bot.dialogue, narrator);
+      await coordinator.start();
+    } catch (err) {
+      logger.error(`Coordinator failed to start: ${err.message}`);
+    }
+  }
 });
 
-bot.on('end', () => stopAll(skills));
+bot.on('end', () => {
+  if (coordinator) coordinator.stop();
+  stopAll(skills);
+});
 
 function lookAtNearestPlayer () {
   if (!orchestrator.allowed('movement.look')) return
