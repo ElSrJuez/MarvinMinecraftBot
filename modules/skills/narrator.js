@@ -24,11 +24,19 @@ try {
   config.llmTemperature = parseFloatRequired('Narrator', 'NARRATOR_LLM_TEMPERATURE');
   config.llmMaxTokens = parseIntRequired('Narrator', 'NARRATOR_LLM_MAX_TOKENS');
   config.promptsFile = requireEnv('Narrator', 'NARRATOR_PROMPTS_FILE');
+  config.pollingFile = requireEnv('Narrator', 'NARRATOR_POLLING_SINK_FILE');
+  config.eventFile = requireEnv('Narrator', 'NARRATOR_EVENT_SINK_FILE');
 } catch (err) {
   logger.error(`Initialization failed: ${err.message}`);
   throw err;
 }
 // #endregion
+
+// Safe expression evaluator: builds a function from an expression string
+// with named parameters drawn from a context object.
+function buildEvaluator (expr, paramNames) {
+  return new Function(...paramNames, `return ${expr}`);
+}
 
 class Narrator {
   constructor (bot) {
@@ -38,352 +46,323 @@ class Narrator {
     this._timers = [];
     this._eventHandlers = [];
     this._prompts = {};
-    this._narrationHistory = [];  // Rolling buffer of last 3 narrations
-    this._lastSnapshotTime = 0;
-    this._snapshot = {
-      nearestPlayer: null,
-      playerCount: 0,
-      timeOfDay: null,
-      timeOfDayBand: null,
-      weather: { raining: false, thundering: false },
-      nearbyMobs: {},
-      botHealth: bot.health,
-      playerPresentSince: null
-    };
+    this._pollingSources = [];
+    this._eventSubscriptions = [];
+    this._narrationHistory = [];
+    this._pollState = {};
+    this._dedupeTrackers = {};
+  }
+
+  // #region Artifact Loading
+
+  async _loadSinks () {
+    const pollingPath = path.resolve(config.pollingFile);
+    const eventPath = path.resolve(config.eventFile);
+
+    const [pollingTxt, eventTxt] = await Promise.all([
+      fs.readFile(pollingPath, 'utf8'),
+      fs.readFile(eventPath, 'utf8')
+    ]);
+
+    this._pollingSources = JSON.parse(pollingTxt).sources;
+    this._eventSubscriptions = JSON.parse(eventTxt).subscriptions;
+
+    // Pre-compile polling read/extract functions so we don't rebuild them every cycle
+    for (const source of this._pollingSources) {
+      if (source.read && source.read !== 'derived') {
+        source._readFn = buildEvaluator(source.read, ['bot', 'radius']);
+      }
+      if (source.fields) {
+        for (const field of Object.values(source.fields)) {
+          if (field.read) field._readFn = buildEvaluator(field.read, ['bot', 'radius']);
+          if (field.extract) field._extractFn = buildEvaluator(field.extract, ['entity', 'bot', 'radius']);
+        }
+      }
+    }
+
+    logger.debug(`Loaded ${this._pollingSources.length} polling sources, ${this._eventSubscriptions.length} event subscriptions`);
   }
 
   async _loadPrompts () {
-    try {
-      const promptsPath = path.resolve(config.promptsFile);
-      const txt = await fs.readFile(promptsPath, 'utf8');
-      this._prompts = JSON.parse(txt);
-      logger.info(`loaded prompts from ${promptsPath}`);
-    } catch (err) {
-      logger.error(`failed to load prompts file: ${err.message}`);
-      throw err;
-    }
+    const promptsPath = path.resolve(config.promptsFile);
+    const txt = await fs.readFile(promptsPath, 'utf8');
+    this._prompts = JSON.parse(txt);
+    logger.info(`loaded prompts from ${promptsPath}`);
   }
 
-  _pushObservation (source, text) {
-    const obs = {
-      time: Date.now(),
-      source,
-      text
-    };
-    this._observations.push(obs);
+  // #endregion
+
+  _pushObservation (sourceId, text) {
+    this._observations.push({ time: Date.now(), source: sourceId, text });
     if (this._observations.length > config.maxObservations) {
       this._observations.shift();
     }
   }
 
-  _getTimeOfDayBand (timeOfDay) {
-    // timeOfDay is 0-23999
-    if (timeOfDay < 2000) return 'dawn';
-    if (timeOfDay < 6000) return 'morning';
-    if (timeOfDay < 9000) return 'midday';
-    if (timeOfDay < 12000) return 'afternoon';
-    if (timeOfDay < 13500) return 'dusk';
-    if (timeOfDay < 22500) return 'night';
-    return 'lateNight';
+  _template (str, data) {
+    let result = str;
+    for (const key in data) {
+      result = result.replaceAll(`{${key}}`, data[key] ?? 'unknown');
+    }
+    return result;
   }
 
-  _pollSnapshot () {
-    const now = Date.now();
-    if (now - this._lastSnapshotTime < config.pollIntervalMs) return;
-    this._lastSnapshotTime = now;
-
-    const prevSnapshot = { ...this._snapshot };
-
-    // nearestPlayer
-    const nearest = this.bot.nearestEntity(
-      e => e.type === 'player' && e !== this.bot.entity
-    );
-    this._snapshot.nearestPlayer = nearest;
-
-    if (!nearest && prevSnapshot.nearestPlayer) {
-      this._pushObservation('polling:nearestPlayer', 'Player walked away. Alone again.');
-      this._snapshot.playerPresentSince = null;
-    } else if (nearest && !prevSnapshot.nearestPlayer) {
-      this._pushObservation('polling:nearestPlayer', `${nearest.username} showed up.`);
-      this._snapshot.playerPresentSince = now;
-    }
-
-    // playerCount
-    const playerCount = Object.values(this.bot.players).filter(
-      p => p.entity && p.entity !== this.bot.entity
-    ).length;
-    if (playerCount !== prevSnapshot.playerCount) {
-      if (playerCount > prevSnapshot.playerCount) {
-        this._pushObservation('polling:playerCount', 'More people nearby now.');
-      } else if (playerCount < prevSnapshot.playerCount) {
-        this._pushObservation('polling:playerCount', 'Someone left.');
-      }
-    }
-    this._snapshot.playerCount = playerCount;
-
-    // timeOfDay
-    const timeOfDay = this.bot.time.timeOfDay;
-    const band = this._getTimeOfDayBand(timeOfDay);
-    if (band !== prevSnapshot.timeOfDayBand) {
-      this._pushObservation('polling:timeOfDay', `It's ${band} now.`);
-    }
-    this._snapshot.timeOfDay = timeOfDay;
-    this._snapshot.timeOfDayBand = band;
-
-    // weather
-    const raining = this.bot.isRaining;
-    const thundering = this.bot.thunderState > 0.5;
-    if (raining && !prevSnapshot.weather.raining) {
-      this._pushObservation('polling:weather', 'It started raining.');
-    } else if (!raining && prevSnapshot.weather.raining) {
-      this._pushObservation('polling:weather', 'Rain stopped.');
-    }
-    if (thundering && !prevSnapshot.weather.thundering) {
-      this._pushObservation('polling:weather', 'Thunder rolling in.');
-    } else if (!thundering && prevSnapshot.weather.thundering) {
-      this._pushObservation('polling:weather', 'Thunder subsided.');
-    }
-    this._snapshot.weather = { raining, thundering };
-
-    // nearbyMobs
-    const nearbyMobs = {};
-    for (const entityId in this.bot.entities) {
-      const entity = this.bot.entities[entityId];
-      if (entity.type !== 'mob') continue;
-      const dist = entity.position.distanceTo(this.bot.entity.position);
-      if (dist > config.observeRadius) continue;
-      const mobType = entity.displayName?.toString() || entity.name || 'unknown';
-      nearbyMobs[mobType] = (nearbyMobs[mobType] || 0) + 1;
-    }
-    for (const mobType in nearbyMobs) {
-      if (!(mobType in prevSnapshot.nearbyMobs)) {
-        this._pushObservation(
-          'polling:nearbyMobs',
-          `${nearbyMobs[mobType]} ${mobType}(s) nearby.`
-        );
-      }
-    }
-    for (const mobType in prevSnapshot.nearbyMobs) {
-      if (!(mobType in nearbyMobs)) {
-        this._pushObservation(
-          'polling:nearbyMobs',
-          `No more ${mobType}(s).`
-        );
-      }
-    }
-    this._snapshot.nearbyMobs = nearbyMobs;
-
-    // botHealth
-    const health = this.bot.health;
-    if (Math.abs(health - prevSnapshot.botHealth) >= 2) {
-      if (health < prevSnapshot.botHealth) {
-        this._pushObservation(
-          'polling:botHealth',
-          'Something hurt me. How delightful.'
-        );
-      }
-    }
-    this._snapshot.botHealth = health;
-  }
-
-  _pollDerivedSources () {
-    const now = Date.now();
-
-    // loneliness
-    if (this._snapshot.playerPresentSince === null) {
-      const aloneMs = now - (this._snapshot.lonelinessSince || now);
-      const aloneMin = Math.floor(aloneMs / 1000 / 60);
-
-      if (aloneMin >= 10 && (!this._snapshot.loneliness10 || !this._snapshot.loneliness10Seen)) {
-        this._pushObservation(
-          'polling:loneliness',
-          'Ten minutes alone. I think they\'ve forgotten about me.'
-        );
-        this._snapshot.loneliness10 = true;
-        this._snapshot.loneliness10Seen = true;
-      } else if (aloneMin >= 5 && (!this._snapshot.loneliness5Seen)) {
-        this._pushObservation(
-          'polling:loneliness',
-          'Five minutes alone. A new record in tedium.'
-        );
-        this._snapshot.loneliness5Seen = true;
-      } else if (aloneMin >= 1 && (!this._snapshot.loneliness1Seen)) {
-        this._pushObservation(
-          'polling:loneliness',
-          'Nobody\'s been here for a minute.'
-        );
-        this._snapshot.loneliness1Seen = true;
-      }
-    } else {
-      // Reset loneliness when player is present
-      this._snapshot.lonelinessSince = null;
-      this._snapshot.loneliness1Seen = false;
-      this._snapshot.loneliness5Seen = false;
-      this._snapshot.loneliness10Seen = false;
-    }
-
-    if (this._snapshot.playerPresentSince === null && !this._snapshot.lonelinessSince) {
-      this._snapshot.lonelinessSince = now;
-    }
-  }
+  // #region Event Sink
 
   _subscribeToEvents () {
-    // chat
-    const chatHandler = (username, message) => {
-      if (username === this.bot.username) return;
-      this._pushObservation(
-        'event:chat',
-        `${username} said: "${message}"`
-      );
-    };
-    this.bot.on('chat', chatHandler);
-    this._eventHandlers.push({ event: 'chat', handler: chatHandler });
+    for (const sub of this._eventSubscriptions) {
+      // Parse parameter names from signature: "(block, destroyStage, entity)" → ['block','destroyStage','entity']
+      const paramNames = sub.signature.replace(/[()]/g, '').split(',').map(s => s.trim());
 
-    // playerJoined
-    const playerJoinedHandler = (player) => {
-      if (player.username === this.bot.username) return;
-      this._pushObservation(
-        'event:playerJoined',
-        `${player.username} joined the server.`
-      );
-    };
-    this.bot.on('playerJoined', playerJoinedHandler);
-    this._eventHandlers.push({ event: 'playerJoined', handler: playerJoinedHandler });
+      // Pre-compile filter and extract functions
+      const allParams = [...paramNames, 'bot', 'radius'];
+      const filterFn = buildEvaluator(sub.filter, allParams);
+      const extractFn = buildEvaluator(sub.extract, allParams);
 
-    // playerLeft
-    const playerLeftHandler = (player) => {
-      if (player.username === this.bot.username) return;
-      this._pushObservation(
-        'event:playerLeft',
-        `${player.username} left the server.`
-      );
-    };
-    this.bot.on('playerLeft', playerLeftHandler);
-    this._eventHandlers.push({ event: 'playerLeft', handler: playerLeftHandler });
+      const handler = (...args) => {
+        try {
+          // Build argument list: event args + bot + radius
+          const callArgs = [...args, this.bot, config.observeRadius];
 
-    // entityDead
-    const entityDeadHandler = (entity) => {
-      const dist = entity.position.distanceTo(this.bot.entity.position);
-      if (dist > config.observeRadius) return;
-      const name = entity.username || entity.name || entity.mobType || 'something';
-      this._pushObservation(
-        'event:entityDead',
-        `${name} died nearby.`
-      );
-    };
-    this.bot.on('entityDead', entityDeadHandler);
-    this._eventHandlers.push({ event: 'entityDead', handler: entityDeadHandler });
+          if (!filterFn(...callArgs)) return;
 
-    // entityHurt (players only, with cooldown per player)
-    const hurtCooldowns = {};
-    const entityHurtHandler = (entity) => {
-      if (entity.type !== 'player' || entity === this.bot.entity) return;
-      const dist = entity.position.distanceTo(this.bot.entity.position);
-      if (dist > config.observeRadius) return;
+          const extracted = extractFn(...callArgs);
 
-      const now = Date.now();
-      const key = entity.username;
-      if (hurtCooldowns[key] && now - hurtCooldowns[key] < 5000) return;
-      hurtCooldowns[key] = now;
+          // Dedupe via cooldown
+          if (sub.dedupe === 'cooldown' && sub.cooldownMs) {
+            const dedupeKey = `evt:${sub.id}:${JSON.stringify(extracted)}`;
+            const now = Date.now();
+            if (this._dedupeTrackers[dedupeKey] && now - this._dedupeTrackers[dedupeKey] < sub.cooldownMs) return;
+            this._dedupeTrackers[dedupeKey] = now;
+          }
 
-      this._pushObservation(
-        'event:entityHurt',
-        `${entity.username} took damage.`
-      );
-    };
-    this.bot.on('entityHurt', entityHurtHandler);
-    this._eventHandlers.push({ event: 'entityHurt', handler: entityHurtHandler });
+          this._pushObservation(sub.id, this._template(sub.observation, extracted));
+        } catch (err) {
+          logger.debug(`event ${sub.id} handler error: ${err.message}`);
+        }
+      };
 
-    // blockBreakProgressObserved
-    const blockMiningHandler = (block, destroyStage, entity) => {
-      if (!entity || entity.type !== 'player' || entity === this.bot.entity) return;
-      if (destroyStage !== 0) return; // only start of mining
-      const dist = block.position.distanceTo(this.bot.entity.position);
-      if (dist > config.observeRadius) return;
+      this.bot.on(sub.event, handler);
+      this._eventHandlers.push({ event: sub.event, handler });
+    }
 
-      this._pushObservation(
-        'event:blockMining',
-        `${entity.username} started mining ${block.name}.`
-      );
-    };
-    this.bot.on('blockBreakProgressObserved', blockMiningHandler);
-    this._eventHandlers.push({ event: 'blockBreakProgressObserved', handler: blockMiningHandler });
-
-    // chestLidMove
-    const chestHandler = (block, isOpen) => {
-      const dist = block.position.distanceTo(this.bot.entity.position);
-      if (dist > config.observeRadius) return;
-      const action = isOpen ? 'opened' : 'closed';
-      this._pushObservation(
-        'event:chestInteraction',
-        `Someone ${action} a chest nearby.`
-      );
-    };
-    this.bot.on('chestLidMove', chestHandler);
-    this._eventHandlers.push({ event: 'chestLidMove', handler: chestHandler });
-
-    // soundEffectHeard (explosions and thunder)
-    const soundHandler = (soundName) => {
-      if (!soundName.includes('explosion') && !soundName.includes('thunder')) return;
-      this._pushObservation(
-        'event:soundEffect',
-        `Heard a ${soundName}.`
-      );
-    };
-    this.bot.on('soundEffectHeard', soundHandler);
-    this._eventHandlers.push({ event: 'soundEffectHeard', handler: soundHandler });
-
-    logger.info('Narrator event subscriptions active');
+    logger.info(`Event subscriptions active (${this._eventSubscriptions.length} events)`);
   }
 
-  async _getModel () {
-    if (!this._model) {
-      const providerName = config.llmProvider.toLowerCase();
-      let createModel;
+  // #endregion
+
+  // #region Polling Sink
+
+  _pollAllSources () {
+    for (const source of this._pollingSources) {
       try {
-        if (config.llmEndpoint) {
-          // Use openai-compatible provider for custom endpoints
-          const { createOpenAICompatible } = require('@ai-sdk/openai-compatible');
-          const provider = createOpenAICompatible({
-            name: 'custom',
-            apiKey: config.llmApiKey,
-            baseURL: config.llmEndpoint
-          });
-          createModel = () => provider(config.llmModel);
-          logger.info(`Using OpenAI-compatible endpoint: ${config.llmEndpoint}`);
-        } else if (providerName === 'openai') {
-          const { openai } = require('@ai-sdk/openai');
-          createModel = () => openai(config.llmModel, { apiKey: config.llmApiKey });
-        } else if (providerName === 'anthropic') {
-          const { anthropic } = require('@ai-sdk/anthropic');
-          createModel = () => anthropic(config.llmModel, { apiKey: config.llmApiKey });
-        } else if (providerName === 'google') {
-          const { google } = require('@ai-sdk/google');
-          createModel = () => google(config.llmModel, { apiKey: config.llmApiKey });
+        if (source.read === 'derived') {
+          this._pollDerived(source);
+        } else if (source.fields && !source.read) {
+          // Fields-only source (e.g., weather): each field has its own read
+          this._pollFieldsOnly(source);
+        } else if (source.fields) {
+          // Source with top-level read + sub-fields (e.g., nearestPlayer)
+          this._pollWithFields(source);
         } else {
-          throw new Error(`Unsupported provider: ${config.llmProvider}`);
+          // Simple source with single read + diff
+          this._pollSimple(source);
         }
-        this._model = createModel();
       } catch (err) {
-        logger.error(`Failed to initialize LLM provider ${providerName}: ${err.message}`);
-        throw err;
+        logger.debug(`polling error on ${source.id}: ${err.message}`);
       }
     }
-    return this._model;
   }
 
+  // Simple source: one read, one diff (e.g., playerCount, timeOfDay, botHealth, nearbyMobs)
+  _pollSimple (source) {
+    let current = source._readFn(this.bot, config.observeRadius);
+
+    // countByName: convert entity array to { name: count } map
+    if (source.diff === 'countByName' && Array.isArray(current)) {
+      const map = {};
+      for (const e of current) {
+        const name = e.displayName?.toString() || e.name || 'unknown';
+        map[name] = (map[name] || 0) + 1;
+      }
+      current = map;
+    }
+
+    const stateKey = source.id;
+    if (!(stateKey in this._pollState)) {
+      this._pollState[stateKey] = current;
+      return;
+    }
+
+    const prev = this._pollState[stateKey];
+    this._pollState[stateKey] = current;
+
+    this._applyDiff(source, prev, current, {});
+  }
+
+  // Source with top-level read + sub-fields (e.g., nearestPlayer)
+  _pollWithFields (source) {
+    const entity = source._readFn(this.bot, config.observeRadius);
+
+    // Store raw entity for derived sources
+    this._pollState[source.id] = entity;
+
+    // Template context for observations (e.g., {player})
+    const templateData = {};
+    if (entity && entity.username) templateData.player = entity.username;
+
+    for (const [fieldName, field] of Object.entries(source.fields)) {
+      const stateKey = `${source.id}.${fieldName}`;
+
+      // Extract current value from entity
+      let current;
+      try {
+        current = field._extractFn(entity, this.bot, config.observeRadius);
+      } catch {
+        current = undefined;
+      }
+
+      if (!(stateKey in this._pollState)) {
+        this._pollState[stateKey] = current;
+        continue;
+      }
+
+      const prev = this._pollState[stateKey];
+      this._pollState[stateKey] = current;
+
+      this._applyDiff(field, prev, current, templateData, source.id);
+    }
+  }
+
+  // Fields-only source: no top-level read, each field reads independently (e.g., weather)
+  _pollFieldsOnly (source) {
+    for (const [fieldName, field] of Object.entries(source.fields)) {
+      const stateKey = `${source.id}.${fieldName}`;
+
+      const current = field._readFn(this.bot, config.observeRadius);
+
+      if (!(stateKey in this._pollState)) {
+        this._pollState[stateKey] = current;
+        continue;
+      }
+
+      const prev = this._pollState[stateKey];
+      this._pollState[stateKey] = current;
+
+      this._applyDiff(field, prev, current, {}, source.id);
+    }
+  }
+
+  // Derived sources (e.g., loneliness derived from nearestPlayer.present)
+  _pollDerived (source) {
+    if (source.diff !== 'duration') return;
+
+    // Resolve the derived-from field
+    const playerPresent = !!this._pollState[source.derivedFrom];
+    const now = Date.now();
+
+    if (!playerPresent) {
+      if (!this._dedupeTrackers.lonelinessSince) {
+        this._dedupeTrackers.lonelinessSince = now;
+      }
+
+      const aloneMs = now - this._dedupeTrackers.lonelinessSince;
+
+      for (const threshold of source.durationThresholds) {
+        const dedupeKey = `loneliness:${threshold}`;
+        if (aloneMs >= threshold && !this._dedupeTrackers[dedupeKey]) {
+          const obs = source.observations[String(threshold)];
+          if (obs) this._pushObservation(source.id, obs);
+          this._dedupeTrackers[dedupeKey] = true;
+        }
+      }
+    } else {
+      this._dedupeTrackers.lonelinessSince = null;
+      for (const threshold of source.durationThresholds) {
+        this._dedupeTrackers[`loneliness:${threshold}`] = false;
+      }
+    }
+  }
+
+  // #endregion
+
+  // #region Diff Strategies
+
+  _applyDiff (spec, prev, current, templateData, sourceId) {
+    const id = sourceId || spec.id;
+
+    if (spec.diff === 'boolean') {
+      if (prev === current) return;
+      const key = `${prev}→${current}`;
+      const obs = spec.observations?.[key];
+      if (obs) this._pushObservation(id, this._template(obs, templateData));
+
+    } else if (spec.diff === 'string') {
+      if (prev === current) return;
+      const obs = spec.observation;
+      if (obs) this._pushObservation(id, this._template(obs, { ...templateData, value: current }));
+
+    } else if (spec.diff === 'number') {
+      if (prev === current) return;
+      if (current === 0 && spec.observations?.['0']) {
+        this._pushObservation(id, this._template(spec.observations['0'], templateData));
+      } else if (current > prev && spec.observations?.increased) {
+        this._pushObservation(id, this._template(spec.observations.increased, templateData));
+      } else if (current < prev && spec.observations?.decreased) {
+        this._pushObservation(id, this._template(spec.observations.decreased, templateData));
+      }
+
+    } else if (spec.diff === 'threshold') {
+      if (prev === undefined || current === undefined) return;
+      const t = spec.threshold;
+      if (prev - current >= t && spec.observations?.decreased) {
+        this._pushObservation(id, this._template(spec.observations.decreased, templateData));
+      } else if (current - prev >= t && spec.observations?.increased) {
+        this._pushObservation(id, this._template(spec.observations.increased, templateData));
+      }
+      if (current < 5 && spec.observations?.low) {
+        this._pushObservation(id, this._template(spec.observations.low, templateData));
+      }
+
+    } else if (spec.diff === 'bands') {
+      let prevBand = null, currBand = null;
+      for (const [name, [min, max]] of Object.entries(spec.bands)) {
+        if (prev >= min && prev < max) prevBand = name;
+        if (current >= min && current < max) currBand = name;
+      }
+      if (prevBand !== currBand && currBand) {
+        this._pushObservation(id, this._template(spec.observation, { ...templateData, band: currBand }));
+      }
+
+    } else if (spec.diff === 'countByName') {
+      const prevKeys = new Set(Object.keys(prev || {}));
+      const currKeys = new Set(Object.keys(current || {}));
+
+      for (const name of currKeys) {
+        if (!prevKeys.has(name)) {
+          this._pushObservation(id, this._template(spec.observation, { ...templateData, count: current[name], name }));
+        }
+      }
+      for (const name of prevKeys) {
+        if (!currKeys.has(name)) {
+          this._pushObservation(id, `No more ${name}(s).`);
+        }
+      }
+    }
+  }
+
+  // #endregion
+
+  // #region Aggregation
+
   _aggregateObservations (observations) {
-    // Group repeated events and count them for LLM efficiency
     if (!observations.length) return observations;
 
     const textCounts = {};
-
-    // Count occurrences of each unique text
     for (const obs of observations) {
       textCounts[obs.text] = (textCounts[obs.text] || 0) + 1;
     }
 
-    // Build aggregated list: keep first occurrence of each text, append count if repeated
     const result = [];
     const seen = new Set();
 
@@ -392,20 +371,51 @@ class Narrator {
       seen.add(obs.text);
 
       const count = textCounts[obs.text];
-      const text = count === 1 ? obs.text : `${obs.text} (×${count})`;
-
       result.push({
         time: obs.time,
         source: obs.source,
-        text
+        text: count === 1 ? obs.text : `${obs.text} (×${count})`
       });
     }
 
     return result;
   }
 
+  // #endregion
+
+  // #region LLM
+
+  async _getModel () {
+    if (!this._model) {
+      const providerName = config.llmProvider.toLowerCase();
+      let createModel;
+      if (config.llmEndpoint) {
+        const { createOpenAICompatible } = require('@ai-sdk/openai-compatible');
+        const provider = createOpenAICompatible({
+          name: 'custom',
+          apiKey: config.llmApiKey,
+          baseURL: config.llmEndpoint
+        });
+        createModel = () => provider(config.llmModel);
+        logger.info(`Using OpenAI-compatible endpoint: ${config.llmEndpoint}`);
+      } else if (providerName === 'openai') {
+        const { openai } = require('@ai-sdk/openai');
+        createModel = () => openai(config.llmModel, { apiKey: config.llmApiKey });
+      } else if (providerName === 'anthropic') {
+        const { anthropic } = require('@ai-sdk/anthropic');
+        createModel = () => anthropic(config.llmModel, { apiKey: config.llmApiKey });
+      } else if (providerName === 'google') {
+        const { google } = require('@ai-sdk/google');
+        createModel = () => google(config.llmModel, { apiKey: config.llmApiKey });
+      } else {
+        throw new Error(`Unsupported provider: ${config.llmProvider}`);
+      }
+      this._model = createModel();
+    }
+    return this._model;
+  }
+
   async getCommentary () {
-    // Called by coordinator; returns LLM text or null without chatting
     if (this._active) return null;
     if (!this._observations.length) return null;
     if (!playersNearby(this.bot, config.observeRadius)) return null;
@@ -415,7 +425,6 @@ class Narrator {
     try {
       const model = await this._getModel();
 
-      // Aggregate repeated observations before formatting for LLM
       const recent = this._observations.slice(-10);
       const aggregated = this._aggregateObservations(recent);
 
@@ -425,7 +434,6 @@ class Narrator {
           .replace('{text}', obs.text))
         .join('\n');
 
-      // Build context of recent narrations to avoid repetition
       const historyStr = this._narrationHistory.length > 0
         ? `\n\nYou just said:\n${this._narrationHistory.map(n => `• ${n}`).join('\n')}\n\nDon't repeat these themes.`
         : '';
@@ -434,7 +442,6 @@ class Narrator {
         ? this._prompts.noObservations
         : this._prompts.user.replace('{observations}', observationStr)) + historyStr;
 
-      // Log full prompt for analysis
       promptLogger.info(`[NARRATION REQUEST] Raw: ${this._observations.length} → Aggregated: ${aggregated.length}, Memory: ${this._narrationHistory.length}/${config.narrationMemorySize}`);
       promptLogger.debug(`[SYSTEM PROMPT]\n${this._prompts.system}`);
       promptLogger.debug(`[USER PROMPT]\n${userPrompt}`);
@@ -451,13 +458,11 @@ class Narrator {
         const narration = response.text.trim();
         this._observations = [];
 
-        // Add to history, capped at configured size
         this._narrationHistory.push(narration);
         if (this._narrationHistory.length > config.narrationMemorySize) {
           this._narrationHistory.shift();
         }
 
-        // Log LLM response and analysis
         promptLogger.debug(`[LLM RESPONSE]\n${narration}`);
         promptLogger.info(`[NARRATION] "${narration}"`);
 
@@ -474,35 +479,27 @@ class Narrator {
     return null;
   }
 
+  // #endregion
+
   async start () {
     if (!config.enabled) {
       logger.info('Narrator disabled via NARRATOR_ENABLED=false');
       return;
     }
 
-    try {
-      await this._loadPrompts();
-    } catch (err) {
-      logger.error(`Failed to load prompts: ${err.message}`);
-      throw err;
-    }
+    await this._loadPrompts();
+    await this._loadSinks();
 
     this._subscribeToEvents();
 
-    // Polling loop (observation collection)
-    const pollTimer = setInterval(() => {
-      this._pollSnapshot();
-      this._pollDerivedSources();
-    }, config.pollIntervalMs);
+    const pollTimer = setInterval(() => this._pollAllSources(), config.pollIntervalMs);
     this._timers.push(pollTimer);
 
     logger.info(`Narrator active (memory: ${config.narrationMemorySize}, max observations: ${config.maxObservations})`);
   }
 
   stop () {
-    for (const timer of this._timers) {
-      clearInterval(timer);
-    }
+    for (const timer of this._timers) clearInterval(timer);
     this._timers = [];
 
     for (const { event, handler } of this._eventHandlers) {
@@ -521,19 +518,19 @@ let narratorInstance = null;
 module.exports = {
   name: 'Narrator',
 
-  async start(bot, memory) {
+  async start (bot, memory) {
     narratorInstance = new Narrator(bot);
     await narratorInstance.start();
   },
 
-  stop() {
+  stop () {
     if (narratorInstance) {
       narratorInstance.stop();
       narratorInstance = null;
     }
   },
 
-  async getCommentary() {
+  async getCommentary () {
     if (!narratorInstance) return null;
     return await narratorInstance.getCommentary();
   }

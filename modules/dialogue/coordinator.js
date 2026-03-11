@@ -61,7 +61,6 @@ class DialogueCoordinator {
       const message = await this._getSourceMessage(source);
       if (message && message.trim()) {
         this.bot.chat(message);
-        logger.info(`[${source.name}] ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`);
         this.lastCommentaryTime = now;
         return;
       }
