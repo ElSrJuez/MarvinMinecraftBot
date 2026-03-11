@@ -142,6 +142,13 @@ class Dialogue {
     return pool[Math.floor(Math.random() * pool.length)].trim()
   }
 
+  getCommentaryForCategory (category) {
+    // Called by coordinator; returns random quote from category respecting cadence rules
+    if (Math.random() > config.probability) return null
+    if (!playersNearby(this.bot, config.radius)) return null
+    return this.pickRandom(category)
+  }
+
   say (category) {
     const q = this._pick(category)
     if (q) this.bot.chat(q)

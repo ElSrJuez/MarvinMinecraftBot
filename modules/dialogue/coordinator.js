@@ -19,7 +19,7 @@ class DialogueCoordinator {
     this.bot = bot;
     this.dialogue = dialogue;
     this.narrator = narrator;
-    this.lastCommentaryTime = 0;
+    this.lastCommentaryTime = -Infinity;  // Allow first message immediately, then enforce cadence
     this.timer = null;
     this.sources = [];
   }
@@ -41,7 +41,7 @@ class DialogueCoordinator {
       if (source.type === 'narrator') {
         return await this.narrator.getCommentary();
       } else if (source.type === 'dialogue') {
-        return this.dialogue.pickRandom(source.category, source.filter);
+        return this.dialogue.getCommentaryForCategory(source.category);
       }
       return null;
     } catch (err) {
