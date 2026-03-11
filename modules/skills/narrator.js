@@ -7,6 +7,7 @@ const { playersNearby } = require('./util');
 
 // #region Configuration Loading
 const logger = createLogger('Narrator');
+const promptLogger = createLogger('NarratorPrompts');
 const config = {};
 
 try {
@@ -73,7 +74,6 @@ class Narrator {
     if (this._observations.length > config.maxObservations) {
       this._observations.shift();
     }
-    logger.debug(`[${source}] ${text}`);
   }
 
   _getTimeOfDayBand (timeOfDay) {
@@ -332,6 +332,8 @@ class Narrator {
     };
     this.bot.on('soundEffectHeard', soundHandler);
     this._eventHandlers.push({ event: 'soundEffectHeard', handler: soundHandler });
+
+    logger.info('Narrator event subscriptions active');
   }
 
   async _getModel () {
@@ -432,7 +434,10 @@ class Narrator {
         ? this._prompts.noObservations
         : this._prompts.user.replace('{observations}', observationStr)) + historyStr;
 
-      logger.debug(`narration: ${this._observations.length} raw observations, ${aggregated.length} aggregated, calling LLM`);
+      // Log full prompt for analysis
+      promptLogger.info(`[NARRATION REQUEST] Raw: ${this._observations.length} → Aggregated: ${aggregated.length}, Memory: ${this._narrationHistory.length}/${config.narrationMemorySize}`);
+      promptLogger.debug(`[SYSTEM PROMPT]\n${this._prompts.system}`);
+      promptLogger.debug(`[USER PROMPT]\n${userPrompt}`);
 
       const response = await generateText({
         model,
@@ -452,12 +457,15 @@ class Narrator {
           this._narrationHistory.shift();
         }
 
-        logger.debug(`narration generated: ${narration.length} chars`);
+        // Log LLM response and analysis
+        promptLogger.debug(`[LLM RESPONSE]\n${narration}`);
+        promptLogger.info(`[NARRATION] "${narration}"`);
+
         return narration;
       }
     } catch (err) {
-      logger.warn(`narration failed: ${err.message}`);
-      // Return fallback error quote via coordinator
+      logger.warn(`Narration failed: ${err.message}`);
+      promptLogger.warn(`[LLM ERROR] ${err.message}`);
       return null;
     } finally {
       this._active = false;
@@ -488,8 +496,7 @@ class Narrator {
     }, config.pollIntervalMs);
     this._timers.push(pollTimer);
 
-    // LLM narration is triggered by coordinator on its cadence
-    logger.info('Narrator active');
+    logger.info(`Narrator active (memory: ${config.narrationMemorySize}, max observations: ${config.maxObservations})`);
   }
 
   stop () {

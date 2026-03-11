@@ -29,7 +29,7 @@ class DialogueCoordinator {
       const sourcesPath = path.resolve(config.sourcesFile);
       const txt = await fs.readFile(sourcesPath, 'utf8');
       this.sources = JSON.parse(txt).sources;
-      logger.info(`loaded ${this.sources.length} commentary sources from ${sourcesPath}`);
+      logger.debug(`loaded ${this.sources.length} commentary sources from ${sourcesPath}`);
     } catch (err) {
       logger.error(`failed to load sources file: ${err.message}`);
       throw err;
@@ -61,7 +61,7 @@ class DialogueCoordinator {
       const message = await this._getSourceMessage(source);
       if (message && message.trim()) {
         this.bot.chat(message);
-        logger.info(`[${source.name}] ${message.length} chars`);
+        logger.info(`[${source.name}] ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`);
         this.lastCommentaryTime = now;
         return;
       }
@@ -71,7 +71,7 @@ class DialogueCoordinator {
   async start() {
     await this._loadSources();
     this.timer = setInterval(() => this._maybeSpeak(), config.commentaryCadenceMs);
-    logger.info('Coordinator active');
+    logger.info(`Dialogue coordinator active (cadence: ${config.commentaryCadenceMs}ms)`);
   }
 
   stop() {

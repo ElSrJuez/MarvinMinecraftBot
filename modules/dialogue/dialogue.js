@@ -35,7 +35,10 @@ class Dialogue {
     try {
       const txt = await fs.readFile(config.cacheFile, 'utf8')
       const data = JSON.parse(txt)
-      if (Array.isArray(data) && data.length) return data
+      if (Array.isArray(data) && data.length) {
+        logger.debug(`loaded ${data.length} canonical quotes`)
+        return data
+      }
     } catch (err) {
       if (err.code !== 'ENOENT') {
         logger.warn(`failed to read canonical file: ${err.message}`)
@@ -50,7 +53,7 @@ class Dialogue {
       const txt = await fs.readFile(seedPath, 'utf8')
       const data = JSON.parse(txt)
       if (Array.isArray(data) && data.length) {
-        logger.info(`loaded ${data.length} quotes from seed file ${seedPath}`)
+        logger.debug(`loaded ${data.length} quotes from seed file`)
         return data
       }
     } catch (err) {
@@ -87,7 +90,7 @@ class Dialogue {
             category: (entry && entry.category) || 'idle'
           })
         }
-        logger.info(`fetched ${raw.length} quotes from ${url}`)
+        logger.debug(`fetched ${raw.length} quotes from ${url}`)
       } catch (err) {
         logger.warn(`fetch error for ${url}: ${err && err.message}`)
       }
@@ -109,7 +112,7 @@ class Dialogue {
         added++
       }
     }
-    if (added) logger.info(`merged ${added} new ${label} quotes into canonical file`)
+    if (added) logger.debug(`merged ${added} new ${label} quotes`)
     return existing
   }
 
@@ -124,7 +127,7 @@ class Dialogue {
     }
     const idle = (this._categories.idle || []).length
     const cats = Object.keys(this._categories).length
-    logger.info(`indexed ${idle} idle quotes, ${cats} categories total`)
+    logger.debug(`indexed ${idle} idle quotes, ${cats} categories total`)
   }
 
   _pick (category) {
@@ -194,7 +197,8 @@ class Dialogue {
       return
     }
     // Timer removed — coordinator manages dialogue cadence
-    logger.info('Dialogue loaded and ready')
+    const totalQuotes = Object.values(this._categories).reduce((sum, arr) => sum + arr.length, 0);
+    logger.info(`Dialogue loaded (${totalQuotes} quotes, ${Object.keys(this._categories).length} categories)`)
   }
 
   stop () {
