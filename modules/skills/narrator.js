@@ -15,6 +15,7 @@ try {
   config.observeRadius = parseFloatRequired('Narrator', 'NARRATOR_OBSERVE_RADIUS');
   config.pollIntervalMs = parseIntRequired('Narrator', 'NARRATOR_POLL_INTERVAL_MS');
   config.maxObservations = parseIntRequired('Narrator', 'NARRATOR_MAX_OBSERVATIONS');
+  config.narrationMemorySize = parseIntRequired('Narrator', 'NARRATOR_NARRATION_MEMORY_SIZE');
   config.llmProvider = requireEnv('Narrator', 'NARRATOR_LLM_PROVIDER');
   config.llmModel = requireEnv('Narrator', 'NARRATOR_LLM_MODEL');
   config.llmApiKey = requireEnv('Narrator', 'NARRATOR_LLM_API_KEY');
@@ -36,6 +37,7 @@ class Narrator {
     this._timers = [];
     this._eventHandlers = [];
     this._prompts = {};
+    this._narrationHistory = [];  // Rolling buffer of last 3 narrations
     this._lastSnapshotTime = 0;
     this._snapshot = {
       nearestPlayer: null,
@@ -368,6 +370,38 @@ class Narrator {
     return this._model;
   }
 
+  _aggregateObservations (observations) {
+    // Group repeated events and count them for LLM efficiency
+    if (!observations.length) return observations;
+
+    const textCounts = {};
+
+    // Count occurrences of each unique text
+    for (const obs of observations) {
+      textCounts[obs.text] = (textCounts[obs.text] || 0) + 1;
+    }
+
+    // Build aggregated list: keep first occurrence of each text, append count if repeated
+    const result = [];
+    const seen = new Set();
+
+    for (const obs of observations) {
+      if (seen.has(obs.text)) continue;
+      seen.add(obs.text);
+
+      const count = textCounts[obs.text];
+      const text = count === 1 ? obs.text : `${obs.text} (×${count})`;
+
+      result.push({
+        time: obs.time,
+        source: obs.source,
+        text
+      });
+    }
+
+    return result;
+  }
+
   async getCommentary () {
     // Called by coordinator; returns LLM text or null without chatting
     if (this._active) return null;
@@ -379,18 +413,26 @@ class Narrator {
     try {
       const model = await this._getModel();
 
-      const observationStr = this._observations
-        .slice(-10) // last 10 observations
+      // Aggregate repeated observations before formatting for LLM
+      const recent = this._observations.slice(-10);
+      const aggregated = this._aggregateObservations(recent);
+
+      const observationStr = aggregated
         .map(obs => this._prompts.observationFormat
           .replace('{time}', new Date(obs.time).toLocaleTimeString())
           .replace('{text}', obs.text))
         .join('\n');
 
-      const userPrompt = this._observations.length === 0
-        ? this._prompts.noObservations
-        : this._prompts.user.replace('{observations}', observationStr);
+      // Build context of recent narrations to avoid repetition
+      const historyStr = this._narrationHistory.length > 0
+        ? `\n\nYou just said:\n${this._narrationHistory.map(n => `• ${n}`).join('\n')}\n\nDon't repeat these themes.`
+        : '';
 
-      logger.debug(`narration: ${this._observations.length} observations, calling LLM`);
+      const userPrompt = (this._observations.length === 0
+        ? this._prompts.noObservations
+        : this._prompts.user.replace('{observations}', observationStr)) + historyStr;
+
+      logger.debug(`narration: ${this._observations.length} raw observations, ${aggregated.length} aggregated, calling LLM`);
 
       const response = await generateText({
         model,
@@ -401,9 +443,17 @@ class Narrator {
       });
 
       if (response.text && response.text.trim()) {
+        const narration = response.text.trim();
         this._observations = [];
-        logger.debug(`narration generated: ${response.text.length} chars`);
-        return response.text.trim();
+
+        // Add to history, capped at configured size
+        this._narrationHistory.push(narration);
+        if (this._narrationHistory.length > config.narrationMemorySize) {
+          this._narrationHistory.shift();
+        }
+
+        logger.debug(`narration generated: ${narration.length} chars`);
+        return narration;
       }
     } catch (err) {
       logger.warn(`narration failed: ${err.message}`);
@@ -454,6 +504,7 @@ class Narrator {
     this._eventHandlers = [];
 
     this._observations = [];
+    this._narrationHistory = [];
     logger.info('Narrator stopped');
   }
 }
