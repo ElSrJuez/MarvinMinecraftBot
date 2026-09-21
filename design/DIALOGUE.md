@@ -4,7 +4,7 @@ The dialogue module is the single canonical path for all bot chat output. No ski
 
 ## The Canonical Quote File
 
-All quotes live in a single canonical JSON file (`QUOTE_CACHE_FILE`). This file is the source of truth for the dialogue engine. It ships with the repository pre-populated with hand-crafted Marvin lines and accumulates remote quotes over time.
+All quotes live in a single canonical JSON file (`QUOTE_CACHE_FILE`). This file is the source of truth for the dialogue engine. It is stored under the service root runtime area and accumulates remote quotes over time.
 
 Every entry in the canonical file has four fields:
 
@@ -24,6 +24,7 @@ The `category` field is for routing: it determines which pool a quote belongs to
 Quotes enter the canonical file from two paths:
 
 - **Pre-populated** — Marvin's situational lines ship with the repo in the canonical file, each with a `category` and a `source` identifying them as local.
+- **Seed file** (`QUOTE_SEED_FILE`) — The repo ships with a seed JSON file in `source/`; it is read on startup and merged into the canonical file.
 - **Remote** (`QUOTE_URL`) — One or more comma-separated URLs pointing to JSON quote lists. On startup, remote quotes are fetched and merged into the canonical file. New entries are added; existing entries (matched by `quote` text and `source` tag) are left alone.
 
 Remote sources use the standard schema: arrays of objects with `quote`, `person`, and `source` fields. Quotes that arrive without a `category` are automatically tagged as `idle`. Quotes that arrive with a `category` keep it as-is. This means remote sources can contribute to any category without code changes.
@@ -81,3 +82,5 @@ No code changes to the dialogue module are needed in either case.
 | `QUOTE_PROBABILITY` | Chance (0–1) of sending on each interval tick |
 | `QUOTE_RADIUS` | Block radius — idle quotes only sent when players are within range |
 | `QUOTE_CACHE_FILE` | Path to the canonical quote file (the single source of truth) |
+
+The bot resolves `QUOTE_SEED_FILE` relative to the source checkout and `QUOTE_CACHE_FILE` relative to the service root runtime area.

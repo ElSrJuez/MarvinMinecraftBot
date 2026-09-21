@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
+const { resolveServicePath } = require('../paths');
 
 // #region Logger Configuration
 const levels = { debug: 0, info: 1, warn: 2, error: 3 };
@@ -12,9 +13,10 @@ if (!LOG_LEVEL) throw new Error('Missing required environment variable LOG_LEVEL
 if (!(LOG_LEVEL in levels)) throw new Error(`Invalid LOG_LEVEL: "${LOG_LEVEL}" (must be one of: ${Object.keys(levels).join(', ')})`);
 
 const currentLogLevel = levels[LOG_LEVEL];
+const resolvedLogDir = resolveServicePath(LOG_DIR);
 
-fs.mkdir(LOG_DIR, { recursive: true }).catch(err => {
-  console.error(`[Logger] Failed to create log directory "${LOG_DIR}": ${err.message}`);
+fs.mkdir(resolvedLogDir, { recursive: true }).catch(err => {
+  console.error(`[Logger] Failed to create log directory "${resolvedLogDir}": ${err.message}`);
   process.exit(1);
 });
 // #endregion
@@ -37,7 +39,7 @@ async function log(level, moduleName, msg) {
 
   // Log to file
   try {
-    const logFile = path.join(LOG_DIR, `${moduleName}.log`);
+    const logFile = path.join(resolvedLogDir, `${moduleName}.log`);
     await fs.appendFile(logFile, line + '\n', 'utf8');
   } catch (err) {
     console.error(`[${ts}] [Logger] [error] Failed to write to log file: ${err.message}`);

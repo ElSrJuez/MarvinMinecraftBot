@@ -1,5 +1,5 @@
-const path = require('path');
-require('dotenv').config({ path: path.resolve(process.cwd(), '.env') });
+const { resolveServicePath, resolveSourcePath } = require('./modules/paths');
+require('dotenv').config({ path: resolveServicePath('.env') });
 
 const mineflayer = require('mineflayer');
 const { createLogger, requireEnv, parseIntRequired } = require('./modules/log/logging');
@@ -34,7 +34,7 @@ bot.on('message', (jsonMsg) => logger.info(`Chat message: ${jsonMsg.toString()}`
 const { loadSkills, startAll, stopAll } = require('./modules/skills/loader');
 const memory = require('./modules/memory/memory');
 const orchestrator = require('./modules/locks/orchestrator');
-const skills = loadSkills(path.join(__dirname, 'modules', 'skills'));
+const skills = loadSkills(resolveSourcePath('modules/skills'));
 
 try {
   const Dialogue = require('./modules/dialogue/dialogue');
@@ -51,7 +51,10 @@ bot.once('spawn', async () => {
   await startAll(skills, bot, memory);
 });
 
-bot.on('end', () => stopAll(skills));
+bot.on('end', () => {
+  if (bot.dialogue) bot.dialogue.stop();
+  stopAll(skills);
+});
 
 function lookAtNearestPlayer () {
   if (!orchestrator.allowed('movement.look')) return

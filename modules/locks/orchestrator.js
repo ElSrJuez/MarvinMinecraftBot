@@ -1,26 +1,26 @@
 const fs = require('fs').promises;
-const path = require('path');
 const { createLogger, requireEnv } = require('../log/logging');
+const { resolveServicePath, resolveSourcePath } = require('../paths');
 
 const logger = createLogger('Orchestrator');
 
 const config = {};
 try {
-  config.rulesFile = requireEnv('Orchestrator', 'LOCK_CONFIG_FILE');
-  config.stateFile = requireEnv('Orchestrator', 'LOCK_STATE_FILE');
+  config.rulesFile = resolveSourcePath(requireEnv('Orchestrator', 'LOCK_CONFIG_FILE'));
+  config.stateFile = resolveServicePath(requireEnv('Orchestrator', 'LOCK_STATE_FILE'));
 } catch (err) {
   logger.error(`Initialization failed: ${err.message}`);
   throw err;
 }
 
-const rules = JSON.parse(require('fs').readFileSync(path.resolve(config.rulesFile), 'utf8'));
+const rules = JSON.parse(require('fs').readFileSync(config.rulesFile, 'utf8'));
 logger.info(`loaded lock rules from ${config.rulesFile}`);
 
 const _active = new Set();
 
 function _writeState () {
   const state = [..._active];
-  fs.writeFile(path.resolve(config.stateFile), JSON.stringify(state, null, 2), 'utf8')
+  fs.writeFile(config.stateFile, JSON.stringify(state, null, 2), 'utf8')
     .catch(err => logger.warn(`failed to write lock state: ${err.message}`));
 }
 

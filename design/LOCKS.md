@@ -42,7 +42,7 @@ Adding new locks or adjusting rules requires no code changes — just edit the c
 
 ## Lock State
 
-The orchestrator maintains the set of currently active lock triplets in memory. On every acquire and release, the state is written to the state file (`LOCK_STATE_FILE`) for observability and debugging.
+The orchestrator maintains the set of currently active lock triplets in memory. On every acquire and release, the state is written to the state file (`LOCK_STATE_FILE`) under the service root runtime area for observability and debugging.
 
 ## Orchestrator API
 
@@ -84,3 +84,5 @@ Skills follow a formal namespace that ties together their identity, lock triplet
 |---|---|
 | `LOCK_CONFIG_FILE` | Path to the lock rules config (JSON) |
 | `LOCK_STATE_FILE` | Path to the runtime lock state file (written for observability) |
+
+`LOCK_CONFIG_FILE` is resolved relative to the source checkout. `LOCK_STATE_FILE` is resolved relative to the service root runtime area.

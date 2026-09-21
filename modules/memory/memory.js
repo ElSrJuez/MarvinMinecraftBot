@@ -1,12 +1,13 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { createLogger, requireEnv, parseIntRequired } = require('../log/logging');
+const { resolveServicePath } = require('../paths');
 
 const logger = createLogger('Memory');
 const config = {};
 
 try {
-  config.dir = requireEnv('Memory', 'MEMORY_DIR');
+  config.dir = resolveServicePath(requireEnv('Memory', 'MEMORY_DIR'));
   config.maxEntries = parseIntRequired('Memory', 'MEMORY_MAX_ENTRIES');
 } catch (err) {
   logger.error(`Initialization failed: ${err.message}`);

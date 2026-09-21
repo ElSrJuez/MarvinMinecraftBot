@@ -37,6 +37,7 @@ npm run audit:fix
 - Loads skills via the skill loader, initializes Dialogue module
 - On spawn: starts dialogue and all skills; on end: stops all skills
 - Attaches event handlers and the `lookAtNearestPlayer` behavior
+- Loads `.env` from the service root (`/srv/<service>/.env`), not from the current working directory
 
 **modules/skills/loader.js** (Skill framework)
 - Auto-discovers `.js` files in `modules/skills/` (excluding `loader.js`)
@@ -46,7 +47,7 @@ npm run audit:fix
 
 **modules/memory/memory.js** (Shared memory module)
 - Canonical module for all persistent memory needs — all skills use this
-- File-backed JSONL storage: one file per skill in `MEMORY_DIR` (`state/`)
+- File-backed JSONL storage: one file per skill in `MEMORY_DIR` (`runtime/state/` under the service root)
 - API: `append(skill, entry)`, `read(skill, n)`, `clear(skill)`
 - Auto-trims to `MEMORY_MAX_ENTRIES` per skill on append
 - Config: MEMORY_DIR, MEMORY_MAX_ENTRIES
@@ -57,11 +58,12 @@ npm run audit:fix
 - Caches quotes locally to `QUOTE_CACHE_FILE` to avoid repeated network requests
 - Only sends quotes if players are nearby (within QUOTE_RADIUS)
 - Configuration: QUOTE_ENABLED, QUOTE_URL, QUOTE_INTERVAL_MS, QUOTE_PROBABILITY, QUOTE_CACHE_FILE, QUOTE_RADIUS
+- `QUOTE_SEED_FILE` is resolved from the source checkout; `QUOTE_CACHE_FILE` is resolved from the service root runtime area
 
 **modules/log/logging.js** (Logging system)
 - Provides a `createLogger(moduleName)` factory for creating module-specific loggers
 - Exports helper functions: `requireEnv()`, `parseIntRequired()`, `parseFloatRequired()`
-- Logs to both console and files (one file per module in LOG_DIR)
+- Logs to both console and files (one file per module in `LOG_DIR` under the service root)
 - Log level controlled by LOG_LEVEL env var (debug, info, warn, error)
 
 ### Data Flow
@@ -91,9 +93,10 @@ All configuration is environment-variable driven via `.env` file. See `.env.samp
 - **Cache format**: Quotes are stored as JSON arrays. The loader normalizes both string quotes and `{ quote: "..." }` objects.
 - **Quote sources**: The QUOTE_URL can be a comma-separated list of URLs. Both array and `{ quotes: [...] }` response formats are supported.
 - **Errors are non-fatal**: The bot continues running even if dialogue fails to load quotes, fetch from URLs, or send messages.
+- **Path resolution**: source files live under `source/`, while service-owned runtime paths are anchored at the service root (`.env`, `logs/`, `runtime/`).
 
 ## Dependencies
 
-- `mineflayer@^4.35.0` - Minecraft bot protocol library
+- `mineflayer@^4.39.0` - Minecraft bot protocol library
 - `mineflayer-pathfinder` - Pathfinding for bot navigation (used by skills)
-- `dotenv@^16.0.0` - Environment variable loading
+- `dotenv@^18.0.1` - Environment variable loading

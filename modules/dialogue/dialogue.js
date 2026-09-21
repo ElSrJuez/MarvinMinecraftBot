@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { createLogger, requireEnv, parseIntRequired, parseFloatRequired } = require('../log/logging');
 const orchestrator = require('../locks/orchestrator');
+const { resolveServicePath, resolveSourcePath } = require('../paths');
 
 // #region Configuration Loading
 const logger = createLogger('Dialogue');
@@ -11,10 +12,10 @@ try {
   config.enabled = requireEnv('Dialogue', 'QUOTE_ENABLED') === 'true';
   const urlString = requireEnv('Dialogue', 'QUOTE_URL');
   config.urls = urlString.split(',').map(s => s.trim()).filter(Boolean);
-  config.seedFile = requireEnv('Dialogue', 'QUOTE_SEED_FILE');
+  config.seedFile = resolveSourcePath(requireEnv('Dialogue', 'QUOTE_SEED_FILE'));
   config.intervalMs = parseIntRequired('Dialogue', 'QUOTE_INTERVAL_MS');
   config.probability = parseFloatRequired('Dialogue', 'QUOTE_PROBABILITY');
-  config.cacheFile = requireEnv('Dialogue', 'QUOTE_CACHE_FILE');
+  config.cacheFile = resolveServicePath(requireEnv('Dialogue', 'QUOTE_CACHE_FILE'));
   config.radius = parseFloatRequired('Dialogue', 'QUOTE_RADIUS');
 } catch (err) {
   logger.error(`Initialization failed: ${err.message}`);
@@ -27,6 +28,7 @@ class Dialogue {
     this.bot = bot;
     this._categories = {}  // { category: [quote, ...] }
     this._timer = null;
+    this._timeout = null;
     this._running = false;
   }
 
@@ -44,12 +46,11 @@ class Dialogue {
   }
 
   async _readSeed () {
-    const seedPath = path.resolve(config.seedFile)
     try {
-      const txt = await fs.readFile(seedPath, 'utf8')
+      const txt = await fs.readFile(config.seedFile, 'utf8')
       const data = JSON.parse(txt)
       if (Array.isArray(data) && data.length) {
-        logger.info(`loaded ${data.length} quotes from seed file ${seedPath}`)
+        logger.info(`loaded ${data.length} quotes from seed file ${config.seedFile}`)
         return data
       }
     } catch (err) {
@@ -186,18 +187,26 @@ class Dialogue {
     }
     this._running = true
 
-    await this.loadQuotes()
-    if (!Object.keys(this._categories).length) {
-      logger.warn('No quotes available after load; dialogue will be disabled')
-      return
+    try {
+      await this.loadQuotes()
+      if (!Object.keys(this._categories).length) {
+        logger.warn('No quotes available after load; dialogue will be disabled')
+        this._running = false
+        return
+      }
+      this._timer = setInterval(() => this._maybeQuote(), config.intervalMs)
+      this._timeout = setTimeout(() => this._maybeQuote(), 2000)
+    } catch (err) {
+      this._running = false
+      throw err
     }
-    this._timer = setInterval(() => this._maybeQuote(), config.intervalMs)
-    setTimeout(() => this._maybeQuote(), 2000)
   }
 
   stop () {
     if (this._timer) clearInterval(this._timer)
+    if (this._timeout) clearTimeout(this._timeout)
     this._timer = null
+    this._timeout = null
     this._running = false
   }
 }
